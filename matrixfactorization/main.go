@@ -284,7 +284,7 @@ func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 	fmt.Println("=== simple matrix factorization ===")
 	R := artificialMatrix(4, 4)
-	K := 2
+	K := 3
 	P, Q := matrixFactorization(R, K)
 	fmt.Println("err:", factorizationError(R, P, Q))
 	fmt.Println("===================================")
