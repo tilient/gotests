@@ -41,7 +41,7 @@ func newVector(length int) Vector {
 
 func randomVector(length int, factor float64) Vector {
 	vec := make(Vector, length)
-	for ix, _ := range vec {
+	for ix := range vec {
 		vec[ix] = factor * rand.Float64()
 	}
 	return vec
@@ -68,7 +68,7 @@ type Matrix []Vector
 func newMatrix(rows, columns int) Matrix {
 
 	mat := make(Matrix, rows)
-	for ix, _ := range mat {
+	for ix := range mat {
 		mat[ix] = newVector(columns)
 	}
 	return mat
@@ -76,7 +76,7 @@ func newMatrix(rows, columns int) Matrix {
 
 func randomMatrix(rows, columns int, factor float64) Matrix {
 	mat := make(Matrix, rows)
-	for ix, _ := range mat {
+	for ix := range mat {
 		mat[ix] = randomVector(columns, factor)
 	}
 	return mat
@@ -87,11 +87,11 @@ func artificialMatrix(rows, columns int) Matrix {
 	for ix, row := range mat {
 		row[ix%columns] += 20.0
 	}
-	for ix, _ := range mat {
+	for ix := range mat {
 		rix := rand.Intn(rows)
 		mat[ix], mat[rix] = mat[rix], mat[ix]
 	}
-	for ix, _ := range mat {
+	for ix := range mat {
 		mat[ix][0] = mat[ix][1] + mat[ix][2]
 	}
 	return mat
@@ -134,7 +134,7 @@ func (mat1 Matrix) Mult(mat2 Matrix) Matrix {
 	mat := newMatrix(mat1.nrOfRows(), mat2.nrOfColumns())
 	maxK := mat1.nrOfColumns()
 	for rix, row := range mat {
-		for cix, _ := range row {
+		for cix := range row {
 			mat[rix][cix] = 0.0
 			for k := 0; k < maxK; k++ {
 				mat[rix][cix] += mat1[rix][k] * mat2[k][cix]
