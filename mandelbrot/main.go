@@ -24,7 +24,9 @@ func main() {
 			img.Set(px, py, mandelbrot(z))
 		}
 	}
-	png.Encode(os.Stdout, img)
+	f, _ := os.OpenFile("ttt.png", os.O_RDWR|os.O_CREATE, 0755)
+	defer f.Close()
+	png.Encode(f, img)
 }
 
 func mandelbrot(z complex128) color.Color {
