@@ -2,12 +2,14 @@ package list
 
 import (
 	"fmt"
-	"github.com/joeshaw/gengen/generic"
+	"github.com/cheekybits/genny/generic"
 )
 
 //---------------------------------------------------------------------
+//go:generate genny -in=$GOFILE -out=all$GOFILE gen "т=BUILTINS"
+//---------------------------------------------------------------------
 
-type т generic.T
+type т generic.Type
 
 type тList struct {
 	value т
