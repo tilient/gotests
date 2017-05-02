@@ -120,7 +120,7 @@ func (mat Matrix) print() {
 	}
 }
 
-func (mat Matrix) Transpose() Matrix {
+func (mat Matrix) transpose() Matrix {
 	tMat := newMatrix(mat.nrOfColumns(), mat.nrOfRows())
 	for rix, row := range mat {
 		for cix, value := range row {
@@ -130,7 +130,7 @@ func (mat Matrix) Transpose() Matrix {
 	return tMat
 }
 
-func (mat1 Matrix) Mult(mat2 Matrix) Matrix {
+func (mat1 Matrix) mult(mat2 Matrix) Matrix {
 	mat := newMatrix(mat1.nrOfRows(), mat2.nrOfColumns())
 	maxK := mat1.nrOfColumns()
 	for rix, row := range mat {
@@ -283,7 +283,7 @@ func matrixFactorization(R Matrix, K int) (Matrix, Matrix) {
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 	fmt.Println("=== simple matrix factorization ===")
-	R := artificialMatrix(4, 4)
+	R := artificialMatrix(22, 22)
 	K := 3
 	P, Q := matrixFactorization(R, K)
 	fmt.Println("err:", factorizationError(R, P, Q))

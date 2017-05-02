@@ -24,7 +24,7 @@ func main() {
 			img.Set(px, py, mandelbrot(z))
 		}
 	}
-	f, _ := os.OpenFile("ttt.png", os.O_RDWR|os.O_CREATE, 0755)
+	f, _ := os.Create("mandelbrot.png")
 	defer f.Close()
 	png.Encode(f, img)
 }
