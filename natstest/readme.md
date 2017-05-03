@@ -11,3 +11,7 @@ ssh -t tilient.org 'tmux new-session -d "gnatsd -p 44222 --cluster nats://0.0.0.
 with TLS:
 gnatsd -p 44222 --tls --tlscert /etc/ssl/tilient/tilient.org.crt -tlskey /etc/ssl/tilient/tilient.org.key -D
 
+varia:
+>> ssh -4 tilient.org "tmux new -d -s ses 'ls; sleep 10'"
+>> ssh -4 tilient.org "tmux kill-session -t ses"
+
