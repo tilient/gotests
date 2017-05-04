@@ -80,18 +80,15 @@ func run(servers []string) {
 			fmt.Println("2>>", err)
 		}
 
-		aliveCh := make(chan string)
-		ec.BindSendChan("alive", aliveCh)
-		defer close(aliveCh)
 		startCh := make(chan string)
 		ec.BindRecvChan("start", startCh)
 		defer close(startCh)
 
-		for natsServer.NumSubscriptions() < 3 {
-			time.Sleep(time.Second)
+		resp := "xxxx"
+		for resp == "xxxx" {
+			ec.Request("alive", "ok", &resp, 1*time.Second)
 		}
 
-		aliveCh <- "alive"
 		<-startCh
 
 		id, _ := strconv.Atoi(os.Args[2])
@@ -105,13 +102,13 @@ func run(servers []string) {
 
 func deployAndRun(servers []string) {
 	target := "~/kashbah/test"
-	log.Print("=== 1 ===")
+	log.Print("=== Deploying Executable ===")
 	exePath, _ := os.Executable()
 	copyToServers(exePath, target, servers)
-	log.Print("=== 2 ===")
+	log.Print("=== Launching Executable ===")
 	tmuxCmd := "tmux new -d -s ses '" + target + " run %d'"
 	runOnServers(tmuxCmd, servers)
-	log.Print("=== 3 ===")
+	log.Print("=== Waiting for Executables to come up  ===")
 
 	nc, err := nats.Connect(natsServers(servers),
 		nats.MaxReconnects(5), nats.ReconnectWait(30*time.Second))
@@ -124,24 +121,23 @@ func deployAndRun(servers []string) {
 	}
 	defer ec.Close()
 
-	aliveCh := make(chan string)
-	ec.BindRecvChan("alive", aliveCh)
-	defer close(aliveCh)
-	startCh := make(chan string)
-	ec.BindSendChan("start", startCh)
-	defer close(startCh)
-
-	for _, _ = range servers {
-		<-aliveCh
+	cnt := 0
+	ec.Subscribe("alive", func(subj, reply string, str string) {
+		ec.Publish(reply, "ok")
+		cnt += 1
+	})
+	for cnt < len(servers) {
+		time.Sleep(1 * time.Second)
 	}
-	startCh <- "go"
+	log.Print("=== All Executables did come up  ===")
+	ec.Publish("start", "start")
 
-	log.Print("=== 6 ===")
+	log.Print("=== Waiting a minute ===")
 	time.Sleep(60 * time.Second)
-	log.Print("=== 7 ===")
+	log.Print("=== Killing Executables  ===")
 	tmuxCmd = "tmux kill-session -t ses "
 	runOnServers(tmuxCmd, servers)
-	log.Print("=== 5 ===")
+	log.Print("=== Done ===")
 }
 
 //------------------------------------------------------------
