@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"time"
 )
 
@@ -24,10 +25,42 @@ func main() {
 	}
 }
 
+//------------------------------------------------------------
+
 type message struct {
 	Person  string
 	Content string
 }
+
+func clientMain(ec *nats.EncodedConn, id int) {
+	if id == 0 {
+		ch := make(chan message)
+		ec.BindSendChan("foo", ch)
+		defer close(ch)
+
+		log.Print("=== Waiting a few seconds ... ===")
+		time.Sleep(5 * time.Second)
+
+		log.Print("=== Sending Message ... ===")
+		ch <- message{"Wiffel", "Hello"}
+
+		log.Print("=== Waiting a few seconds ... ===")
+		time.Sleep(5 * time.Second)
+	} else {
+		ch := make(chan message)
+		ec.BindRecvChan("foo", ch)
+		//ec.BindRecvQueueChan("foo", "bar", ch)
+		defer close(ch)
+
+		log.Print("=== Waiting for a message ===")
+		msg := <-ch
+		log.Print("=== ", msg.Person)
+		log.Print("=== ", msg.Content)
+		time.Sleep(2 * time.Second)
+	}
+}
+
+//------------------------------------------------------------
 
 func run(servers []string) {
 	log.Print("=== Starting ===")
@@ -37,7 +70,6 @@ func run(servers []string) {
 	} else {
 		log.Print("=== Server did NOT start OK ===")
 	}
-
 	if len(os.Args) > 2 {
 		nc, err := nats.Connect("nats://localhost:44222")
 		if err != nil {
@@ -47,32 +79,25 @@ func run(servers []string) {
 		if err != nil {
 			fmt.Println("2>>", err)
 		}
-		defer ec.Close()
 
-		if os.Args[2] == "0" {
-			log.Print("=== Waiting a few seconds ... ===")
-			time.Sleep(5 * time.Second)
+		aliveCh := make(chan string)
+		ec.BindSendChan("alive", aliveCh)
+		defer close(aliveCh)
+		startCh := make(chan string)
+		ec.BindRecvChan("start", startCh)
+		defer close(startCh)
 
-			ch := make(chan message)
-			ec.BindSendChan("foo", ch)
-			defer close(ch)
-
-			ch <- message{"Wiffel", "Hello"}
-
-			log.Print("=== Waiting a few seconds ... ===")
-			nc.Flush()
-			time.Sleep(5 * time.Second)
-		} else {
-			ch := make(chan message)
-			ec.BindRecvQueueChan("foo", "bar", ch)
-			defer close(ch)
-
-			log.Print("=== Waiting for a message ===")
-			msg := <-ch
-			log.Print("=== ", msg.Person)
-			log.Print("=== ", msg.Content)
-			time.Sleep(2 * time.Second)
+		for natsServer.NumSubscriptions() < 3 {
+			time.Sleep(time.Second)
 		}
+
+		aliveCh <- "alive"
+		<-startCh
+
+		id, _ := strconv.Atoi(os.Args[2])
+		clientMain(ec, id)
+		nc.Flush()
+		ec.Close()
 	}
 	natsServer.Shutdown()
 	log.Print("=== Done ===")
@@ -87,8 +112,33 @@ func deployAndRun(servers []string) {
 	tmuxCmd := "tmux new -d -s ses '" + target + " run %d'"
 	runOnServers(tmuxCmd, servers)
 	log.Print("=== 3 ===")
-	time.Sleep(90 * time.Second)
-	log.Print("=== 4 ===")
+
+	nc, err := nats.Connect(natsServers(servers),
+		nats.MaxReconnects(5), nats.ReconnectWait(30*time.Second))
+	if err != nil {
+		fmt.Println("1>>", err)
+	}
+	ec, err := nats.NewEncodedConn(nc, "gob")
+	if err != nil {
+		fmt.Println("2>>", err)
+	}
+	defer ec.Close()
+
+	aliveCh := make(chan string)
+	ec.BindRecvChan("alive", aliveCh)
+	defer close(aliveCh)
+	startCh := make(chan string)
+	ec.BindSendChan("start", startCh)
+	defer close(startCh)
+
+	for _, _ = range servers {
+		<-aliveCh
+	}
+	startCh <- "go"
+
+	log.Print("=== 6 ===")
+	time.Sleep(60 * time.Second)
+	log.Print("=== 7 ===")
 	tmuxCmd = "tmux kill-session -t ses "
 	runOnServers(tmuxCmd, servers)
 	log.Print("=== 5 ===")
@@ -112,11 +162,23 @@ func runNATSServer(servers []string) *server.Server {
 }
 
 func natsRouteServerList(servers []string) []*url.URL {
+	return server.RoutesFromStr(natsRouteServers(servers))
+}
+
+func natsRouteServers(servers []string) string {
 	srvrs := ""
 	for _, server := range servers {
 		srvrs = srvrs + ",nats://" + server + ":22444"
 	}
-	return server.RoutesFromStr(srvrs[1:])
+	return srvrs[1:]
+}
+
+func natsServers(servers []string) string {
+	srvrs := ""
+	for _, server := range servers {
+		srvrs = srvrs + ",nats://" + server + ":44222"
+	}
+	return srvrs[1:]
 }
 
 //------------------------------------------------------------
