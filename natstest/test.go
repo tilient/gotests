@@ -13,38 +13,45 @@ import (
 
 func main() {
 	if len(os.Args) > 1 {
-		cmd := os.Args[1]
 		servers := []string{"tilient.org", "dev.tilient.org"}
-		if cmd == "deploy" {
-			target := "~/kashbah/test"
-			log.Print("=== 1 ===")
-			exePath, _ := os.Executable()
-			copyToServers(exePath, target, servers)
-			log.Print("=== 2 ===")
-			tmuxCmd := "tmux new -d -s ses '" + target + " run %d'"
-			runOnServers(tmuxCmd, servers)
-			log.Print("=== 3 ===")
-			time.Sleep(90 * time.Second)
-			log.Print("=== 4 ===")
-			tmuxCmd = "tmux kill-session -t ses "
-			runOnServers(tmuxCmd, servers)
-			log.Print("=== 5 ===")
-		}
-		if cmd == "run" {
-			log.Print("=== <1> ===")
-			natsServer := runNATSServer(servers)
-			log.Print("=== <3> ===")
-			if srvr.ReadyForConnections(10 * time.Second) {
-				log.Print("=== OK  ===")
-			} else {
-				log.Print("=== NOK ===")
-			}
-			log.Print("=== <4> ===")
-			time.Sleep(60 * time.Second)
-			natsServer.Shutdown()
-			log.Print("=== <5> ===")
+		switch os.Args[1] {
+		case "deploy":
+			deployAndRun(servers)
+		case "run":
+			run(servers)
 		}
 	}
+}
+
+func run(servers []string) {
+	log.Print("=== <1> ===")
+	natsServer := runNATSServer(servers)
+	log.Print("=== <3> ===")
+	if natsServer.ReadyForConnections(10 * time.Second) {
+		log.Print("=== OK  ===")
+	} else {
+		log.Print("=== NOK ===")
+	}
+	log.Print("=== <4> ===")
+	time.Sleep(60 * time.Second)
+	natsServer.Shutdown()
+	log.Print("=== <5> ===")
+}
+
+func deployAndRun(servers []string) {
+	target := "~/kashbah/test"
+	log.Print("=== 1 ===")
+	exePath, _ := os.Executable()
+	copyToServers(exePath, target, servers)
+	log.Print("=== 2 ===")
+	tmuxCmd := "tmux new -d -s ses '" + target + " run %d'"
+	runOnServers(tmuxCmd, servers)
+	log.Print("=== 3 ===")
+	time.Sleep(90 * time.Second)
+	log.Print("=== 4 ===")
+	tmuxCmd = "tmux kill-session -t ses "
+	runOnServers(tmuxCmd, servers)
+	log.Print("=== 5 ===")
 }
 
 //------------------------------------------------------------

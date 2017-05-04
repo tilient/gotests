@@ -20,7 +20,7 @@ func main() {
 	//servers := "nats://0.0.0.0:44222, tls://tilient.org:44222, nats://dev.tilient.org:44222"
 	fmt.Println("-- 0 --")
 	//nc, err := nats.Connect(servers)
-	nc, err := nats.Connect("nats://localhost:44222")
+	nc, err := nats.Connect("nats://tilient.org:44222")
 	if err != nil {
 		fmt.Println("1>>", err)
 	}
@@ -44,21 +44,15 @@ func main() {
 	time.Sleep(time.Second)
 	fmt.Println("-- 7 --")
 
-	fmt.Println("-- 8 --")
 	recvCh := make(chan *person)
 	ec.BindRecvChan("hello", recvCh)
 	sendCh := make(chan *person)
 	ec.BindSendChan("hello", sendCh)
 
 	me := person{Name: "wiffel", Age: 53}
-	fmt.Println("-- 9 --")
 
-	fmt.Println("-- 10 --")
 	sendCh <- &me
 	time.Sleep(time.Second)
-	fmt.Println("-- 11 --")
 	who := <-recvCh
-	fmt.Println("-- 12 --")
 	fmt.Println(who)
-	fmt.Println("-- 13 --")
 }
