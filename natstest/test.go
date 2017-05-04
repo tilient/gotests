@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/nats-io/gnatsd/logger"
 	"github.com/nats-io/gnatsd/server"
+	"github.com/nats-io/go-nats"
 	"log"
 	"net/url"
 	"os"
@@ -23,19 +24,58 @@ func main() {
 	}
 }
 
+type message struct {
+	Person  string
+	Content string
+}
+
 func run(servers []string) {
-	log.Print("=== <1> ===")
+	log.Print("=== Starting ===")
 	natsServer := runNATSServer(servers)
-	log.Print("=== <3> ===")
 	if natsServer.ReadyForConnections(10 * time.Second) {
-		log.Print("=== OK  ===")
+		log.Print("=== Server started OK  ===")
 	} else {
-		log.Print("=== NOK ===")
+		log.Print("=== Server did NOT start OK ===")
 	}
-	log.Print("=== <4> ===")
-	time.Sleep(60 * time.Second)
+
+	if len(os.Args) > 2 {
+		nc, err := nats.Connect("nats://localhost:44222")
+		if err != nil {
+			fmt.Println("1>>", err)
+		}
+		ec, err := nats.NewEncodedConn(nc, "gob")
+		if err != nil {
+			fmt.Println("2>>", err)
+		}
+		defer ec.Close()
+
+		if os.Args[2] == "0" {
+			log.Print("=== Waiting a few seconds ... ===")
+			time.Sleep(5 * time.Second)
+
+			ch := make(chan message)
+			ec.BindSendChan("foo", ch)
+			defer close(ch)
+
+			ch <- message{"Wiffel", "Hello"}
+
+			log.Print("=== Waiting a few seconds ... ===")
+			nc.Flush()
+			time.Sleep(5 * time.Second)
+		} else {
+			ch := make(chan message)
+			ec.BindRecvQueueChan("foo", "bar", ch)
+			defer close(ch)
+
+			log.Print("=== Waiting for a message ===")
+			msg := <-ch
+			log.Print("=== ", msg.Person)
+			log.Print("=== ", msg.Content)
+			time.Sleep(2 * time.Second)
+		}
+	}
 	natsServer.Shutdown()
-	log.Print("=== <5> ===")
+	log.Print("=== Done ===")
 }
 
 func deployAndRun(servers []string) {
@@ -63,10 +103,10 @@ func runNATSServer(servers []string) *server.Server {
 	opts.Cluster.Host = "::"
 	opts.Cluster.Port = 22444
 	opts.Routes = natsRouteServerList(servers)
-	log := logger.NewStdLogger(true, true, false, true, false)
+	log := logger.NewStdLogger(false, true, false, true, false)
 
 	s := server.New(&opts)
-	s.SetLogger(log, true, false)
+	s.SetLogger(log, false, false)
 	go s.Start()
 	return s
 }
