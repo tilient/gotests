@@ -14,55 +14,53 @@ import (
 )
 
 func main() {
+	servers := []string{"tilient.org", "dev.tilient.org"}
 	if len(os.Args) > 1 {
-		servers := []string{"tilient.org", "dev.tilient.org"}
 		switch os.Args[1] {
 		case "deploy":
 			deployAndRun(servers)
+		case "syncrun":
+			run(servers, true)
 		case "run":
-			run(servers)
+			run(servers, false)
+		}
+	} else {
+		run(servers, false)
+	}
+}
+
+//------------------------------------------------------------
+
+func clientMain(ec *nats.EncodedConn, id int) {
+	countCh := make(chan int)
+	ec.BindRecvQueueChan("count", "pool", countCh)
+	ec.BindSendChan("count", countCh)
+	defer close(countCh)
+
+	cmdCh := make(chan string)
+	ec.BindRecvChan("cmd", cmdCh)
+	defer close(cmdCh)
+
+	for {
+		select {
+		case cmd := <-cmdCh:
+			if cmd == "quit" {
+				return
+			}
+		case count := <-countCh:
+			fmt.Println("count:", count)
+			if count > 0 {
+				countCh <- (count - 1)
+			}
+		case <-time.After(5 * time.Second):
+			fmt.Println(".")
 		}
 	}
 }
 
 //------------------------------------------------------------
 
-type message struct {
-	Person  string
-	Content string
-}
-
-func clientMain(ec *nats.EncodedConn, id int) {
-	if id == 0 {
-		ch := make(chan message)
-		ec.BindSendChan("foo", ch)
-		defer close(ch)
-
-		log.Print("=== Waiting a few seconds ... ===")
-		time.Sleep(5 * time.Second)
-
-		log.Print("=== Sending Message ... ===")
-		ch <- message{"Wiffel", "Hello"}
-
-		log.Print("=== Waiting a few seconds ... ===")
-		time.Sleep(5 * time.Second)
-	} else {
-		ch := make(chan message)
-		ec.BindRecvChan("foo", ch)
-		//ec.BindRecvQueueChan("foo", "bar", ch)
-		defer close(ch)
-
-		log.Print("=== Waiting for a message ===")
-		msg := <-ch
-		log.Print("=== ", msg.Person)
-		log.Print("=== ", msg.Content)
-		time.Sleep(2 * time.Second)
-	}
-}
-
-//------------------------------------------------------------
-
-func run(servers []string) {
+func run(servers []string, sync bool) {
 	log.Print("=== Starting ===")
 	natsServer := runNATSServer(servers)
 	if natsServer.ReadyForConnections(10 * time.Second) {
@@ -70,16 +68,16 @@ func run(servers []string) {
 	} else {
 		log.Print("=== Server did NOT start OK ===")
 	}
-	if len(os.Args) > 2 {
-		nc, err := nats.Connect("nats://localhost:44222")
-		if err != nil {
-			fmt.Println("1>>", err)
-		}
-		ec, err := nats.NewEncodedConn(nc, "gob")
-		if err != nil {
-			fmt.Println("2>>", err)
-		}
+	nc, err := nats.Connect("nats://localhost:44222")
+	if err != nil {
+		fmt.Println("1>>", err)
+	}
+	ec, err := nats.NewEncodedConn(nc, "json")
+	if err != nil {
+		fmt.Println("2>>", err)
+	}
 
+	if sync {
 		startCh := make(chan string)
 		ec.BindRecvChan("start", startCh)
 		defer close(startCh)
@@ -90,12 +88,15 @@ func run(servers []string) {
 		}
 
 		<-startCh
-
-		id, _ := strconv.Atoi(os.Args[2])
-		clientMain(ec, id)
-		nc.Flush()
-		ec.Close()
 	}
+
+	id := -1
+	if len(os.Args) > 2 {
+		id, _ = strconv.Atoi(os.Args[2])
+	}
+	clientMain(ec, id)
+	nc.Flush()
+	ec.Close()
 	natsServer.Shutdown()
 	log.Print("=== Done ===")
 }
@@ -105,17 +106,18 @@ func deployAndRun(servers []string) {
 	log.Print("=== Deploying Executable ===")
 	exePath, _ := os.Executable()
 	copyToServers(exePath, target, servers)
-	log.Print("=== Launching Executable ===")
-	tmuxCmd := "tmux new -d -s ses '" + target + " run %d'"
-	runOnServers(tmuxCmd, servers)
-	log.Print("=== Waiting for Executables to come up  ===")
 
+	log.Print("=== Launching Executable ===")
+	tmuxCmd := "tmux new -d -s ses '" + target + " syncrun %d'"
+	runOnServers(tmuxCmd, servers)
+
+	log.Print("=== Waiting for Executables to come up  ===")
 	nc, err := nats.Connect(natsServers(servers),
 		nats.MaxReconnects(5), nats.ReconnectWait(30*time.Second))
 	if err != nil {
 		fmt.Println("1>>", err)
 	}
-	ec, err := nats.NewEncodedConn(nc, "gob")
+	ec, err := nats.NewEncodedConn(nc, "json")
 	if err != nil {
 		fmt.Println("2>>", err)
 	}
@@ -129,11 +131,11 @@ func deployAndRun(servers []string) {
 	for cnt < len(servers) {
 		time.Sleep(1 * time.Second)
 	}
-	log.Print("=== All Executables did come up  ===")
 	ec.Publish("start", "start")
+	log.Print("=== All Executables did come up  ===")
 
-	log.Print("=== Waiting a minute ===")
-	time.Sleep(60 * time.Second)
+	log.Print("=== Waiting 5 minutes ===")
+	time.Sleep(5 * 60 * time.Second)
 	log.Print("=== Killing Executables  ===")
 	tmuxCmd = "tmux kill-session -t ses "
 	runOnServers(tmuxCmd, servers)
