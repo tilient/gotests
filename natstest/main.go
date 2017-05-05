@@ -15,10 +15,11 @@ import (
 
 func main() {
 	servers := []string{"tilient.org", "dev.tilient.org"}
+	target := "~/kashbah/test"
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "deploy":
-			deployAndRun(servers)
+			deployAndRun(target, servers)
 		case "syncrun":
 			run(servers, true)
 		case "run":
@@ -101,16 +102,29 @@ func run(servers []string, sync bool) {
 	log.Print("=== Done ===")
 }
 
-func deployAndRun(servers []string) {
-	target := "~/kashbah/test"
+func deployAndRun(target string, servers []string) {
+	deployClients(target, servers)
+	runClients(target, servers)
+	syncClients(target, servers)
+	log.Print("=== Waiting 5 minutes ===")
+	time.Sleep(5 * 60 * time.Second)
+	killClients(target, servers)
+	log.Print("=== Done ===")
+}
+
+func deployClients(target string, servers []string) {
 	log.Print("=== Deploying Executable ===")
 	exePath, _ := os.Executable()
 	copyToServers(exePath, target, servers)
+}
 
+func runClients(target string, servers []string) {
 	log.Print("=== Launching Executable ===")
 	tmuxCmd := "tmux new -d -s ses '" + target + " syncrun %d'"
 	runOnServers(tmuxCmd, servers)
+}
 
+func syncClients(target string, servers []string) {
 	log.Print("=== Waiting for Executables to come up  ===")
 	nc, err := nats.Connect(natsServers(servers),
 		nats.MaxReconnects(5), nats.ReconnectWait(30*time.Second))
@@ -133,13 +147,12 @@ func deployAndRun(servers []string) {
 	}
 	ec.Publish("start", "start")
 	log.Print("=== All Executables did come up  ===")
+}
 
-	log.Print("=== Waiting 5 minutes ===")
-	time.Sleep(5 * 60 * time.Second)
+func killClients(target string, servers []string) {
 	log.Print("=== Killing Executables  ===")
-	tmuxCmd = "tmux kill-session -t ses "
+	tmuxCmd := "tmux kill-session -t ses "
 	runOnServers(tmuxCmd, servers)
-	log.Print("=== Done ===")
 }
 
 //------------------------------------------------------------
