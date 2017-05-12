@@ -2,32 +2,33 @@ package main
 
 import "fmt"
 
-func interval(from, to int) chan int {
-	ch := make(chan int)
-	go func() {
-		for i := from; i <= to; i++ {
-			ch <- i
-		}
-		close(ch)
-	}()
-	return ch
+type seq struct {
+	from int
+	to   int
 }
 
-func filenames() <-chan string {
+func expandAll(ch chan string, format string, seqs []seq, args ...interface{}) {
+	if len(seqs) == 0 {
+		ch <- fmt.Sprintf(format, args...)
+	} else {
+		for v := seqs[0].from; v <= seqs[0].to; v++ {
+			expandAll(ch, format, seqs[1:], append(args, v)...)
+		}
+	}
+}
+
+func expand(format string, seqs ...seq) chan string {
 	ch := make(chan string)
 	go func() {
-		for c := range interval('a', 'e') {
-			for i := range interval(0, 2) {
-				ch <- fmt.Sprintf("file_%c_%02d.txt", c, i)
-			}
-		}
+		expandAll(ch, format, seqs)
 		close(ch)
 	}()
 	return ch
 }
 
 func main() {
-	for filename := range filenames() {
-		go fmt.Println(filename)
+	filenames := expand("file_%c_%02d.txt", seq{'d', 'f'}, seq{3, 5})
+	for filename := range filenames {
+		fmt.Println(filename)
 	}
 }
