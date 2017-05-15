@@ -5,11 +5,29 @@ import "fmt"
 // ----------------------------------------------------------
 
 func main() {
-	filenames := formatString("file_%c%c_%02d_%c.txt").expand(
-		intervals{{'D', 'E'}, {'A', 'B'}, {0, 1}, {'a', 'c'}})
-	for _, fn := range filenames {
-		fmt.Println(fn)
+	filenameParts := formatString("img_%c_%02d_").expand(
+		intervals{{'A', 'C'}, {0, 2}})
+	for _, fn := range filenameParts {
+		filenames := formatString(fn + "%02d.img").expand(
+			intervals{{1, 3}})
+		if ok, missing := allFilesExist(filenames); ok {
+			fmt.Println(filenames)
+		} else {
+			fmt.Println("missing:", missing)
+		}
 	}
+}
+
+func allFilesExist(fns []string) (bool, []string) {
+	result := true
+	missing := []string{}
+	for _, fn := range fns {
+		if fn == "img_B_01_01.img" {
+			missing = append(missing, fn)
+			result = false
+		}
+	}
+	return result, missing
 }
 
 // --- template ---------------------------------------------
