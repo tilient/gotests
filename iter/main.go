@@ -2,14 +2,14 @@ package main
 
 import "fmt"
 
-// ----------------------------------------------------------
+// ------------------------------------------------------------
 
 func main() {
 	filenameParts := formatString("img_%c_%02d_").expand(
 		intervals{{'A', 'C'}, {0, 2}})
 	for _, fn := range filenameParts {
-		filenames := formatString(fn + "%02d.img").expand(
-			intervals{{1, 3}})
+		filenames := stringPart(fn).combinations(
+			[]string{"A01B_C01.img", "A02B_C02.img", "A01C_C03.img"})
 		if ok, missing := allFilesExist(filenames); ok {
 			fmt.Println(filenames)
 		} else {
@@ -18,19 +18,31 @@ func main() {
 	}
 }
 
-func allFilesExist(fns []string) (bool, []string) {
+func allFilesExist(filenames []string) (bool, []string) {
 	result := true
 	missing := []string{}
-	for _, fn := range fns {
-		if fn == "img_B_01_01.img" {
-			missing = append(missing, fn)
+	for _, filename := range filenames {
+		if filename == "img_C_01_A02B_C02.img" {
+			missing = append(missing, filename)
 			result = false
 		}
 	}
 	return result, missing
 }
 
-// --- template ---------------------------------------------
+// --- strings ------------------------------------------------
+
+type stringPart string
+
+func (str stringPart) combinations(strings []string) []string {
+	res := []string{}
+	for _, ext := range strings {
+		res = append(res, string(str)+ext)
+	}
+	return res
+}
+
+// --- template -----------------------------------------------
 
 type formatString string
 
@@ -41,7 +53,7 @@ func (fs formatString) expand(intervals intervals) []string {
 	return intervals.combinations().mapIt(list2string)
 }
 
-// --- intervals --------------------------------------------
+// --- intervals ----------------------------------------------
 
 type (
 	interval struct {
@@ -71,7 +83,7 @@ func (intervals intervals) combinations(args ...int) lists {
 	return head.collect(tailCombinations)
 }
 
-// --- lists ------------------------------------------------
+// --- lists --------------------------------------------------
 
 type (
 	list  []int
@@ -94,4 +106,4 @@ func (lsts lists) mapIt(f func(list) string) []string {
 	return result
 }
 
-// ----------------------------------------------------------
+// ------------------------------------------------------------
