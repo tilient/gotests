@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"time"
+	// "time"
 )
 
 func main() {
-	rand.Seed(time.Now().UTC().UnixNano())
-	test01()
+	// rand.Seed(time.Now().UTC().UnixNano())
+	test02()
 }
 
 func test01fun(a, b, c, d float64) float64 {
@@ -17,7 +17,7 @@ func test01fun(a, b, c, d float64) float64 {
 }
 
 func test01() {
-	nrOfSamples := 12345
+	nrOfSamples := 56789
 	a := randomMatrix(nrOfSamples, 4)
 	y := newMatrix(nrOfSamples, 1)
 	for i := 0; i < nrOfSamples; i++ {
@@ -36,6 +36,20 @@ func test01() {
 	fmt.Println("---------")
 }
 
+func test02() {
+	N := 8
+	a := randomMatrix(N, N).multFactor(10.0)
+	x := randomVector(N)
+	b := randomVector(N)
+	for t := 0; t < 18; t++ {
+		x = sor(a, b, x, 0.01)
+		bp := a.multVec(x)
+		fmt.Println("")
+		fmt.Println(b[:2])
+		fmt.Println(bp[:2])
+	}
+}
+
 //#############################################################
 // Pseudo Inverse
 //  Ben-Israel and Cohen Iteration: Xn+1 = 2 * Xn - Xn * m * Xn
@@ -52,6 +66,29 @@ func (mat matrix) pInverse() matrix {
 		res = res.multFactor(2.0).min(res.mult(mat).mult(res))
 	}
 	return res
+}
+
+//#############################################################
+// SOR
+//#############################################################
+
+func sor(a matrix, b vector, x vector, w float64) vector {
+	n := len(x)
+	x_new := newVector(n)
+	for i := 0; i < n; i++ {
+		x_new[i] = b[i]
+		for j := 0; j < i; j++ {
+			x_new[i] -= a[i][j] * x_new[j]
+		}
+		for j := i + 1; j < n; j++ {
+			x_new[i] -= a[i][j] * x[j]
+		}
+		x_new[i] /= a[i][i]
+	}
+	for i := 0; i < n; i++ {
+		x_new[i] = (1.0-w)*x[i] + w*x_new[i]
+	}
+	return x_new
 }
 
 //#############################################################
@@ -105,6 +142,18 @@ func (mat matrix) multFactor(f float64) matrix {
 	for rix, row := range mat {
 		for cix, v := range row {
 			m[rix][cix] = f * v
+		}
+	}
+	return m
+}
+
+func (mat matrix) multVec(v vector) vector {
+	maxK := len(v)
+	m := newVector(mat.nrOfRows())
+	for rix := 0; rix < mat.nrOfRows(); rix++ {
+		m[rix] = 0.0
+		for k := 0; k < maxK; k++ {
+			m[rix] += mat[rix][k] * v[k]
 		}
 	}
 	return m
