@@ -1,12 +1,15 @@
 package main
 
+// go get github.com/cheekybits/genny
+// go generate
+
 import (
 	"fmt"
 	. "github.com/tilient/gotests/genlist/list"
 )
 
 //---------------------------------------------------------------------
-// go:generate genny -in=list/list.go -out=list/intlist.go gen "т=int"
+//go:generate genny -in=list/list.go -out=list/intlist.go gen "т=int"
 //---------------------------------------------------------------------
 
 func main() {
