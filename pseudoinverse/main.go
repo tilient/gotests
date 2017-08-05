@@ -2,14 +2,15 @@ package main
 
 import (
 	"fmt"
+	"gonum.org/v1/gonum/mat"
 	"math"
 	"math/rand"
-	// "time"
+	"time"
 )
 
 func main() {
-	// rand.Seed(time.Now().UTC().UnixNano())
-	test02()
+	rand.Seed(time.Now().UTC().UnixNano())
+	test03()
 }
 
 func test01fun(a, b, c, d float64) float64 {
@@ -37,17 +38,51 @@ func test01() {
 }
 
 func test02() {
-	N := 8
-	a := randomMatrix(N, N).multFactor(10.0)
-	x := randomVector(N)
-	b := randomVector(N)
-	for t := 0; t < 18; t++ {
-		x = sor(a, b, x, 0.01)
-		bp := a.multVec(x)
-		fmt.Println("")
-		fmt.Println(b[:2])
-		fmt.Println(bp[:2])
+	// try to solve X for A * X = B given A and B
+	N := 128
+	M := N
+	a := randomMatrix(N, M)
+	b := randomMatrix(N, 1)
+	x := a.pInverse().mult(b)
+	bp := a.mult(x)
+
+	fmt.Println("b  ", b[:2])
+	fmt.Println("bp ", bp[:2])
+	fmt.Println(" diff:", b.dif(bp))
+}
+
+func test03() {
+	// try to solve X for A * X = Y given A and Y
+	n := 4 * 1024
+	m := 8 * 1024
+
+	y := make([]float64, n)
+	for i := 0; i < n; i++ {
+		y[i] = 2.0*rand.Float64() - 1.0
 	}
+	Y := mat.NewVecDense(n, y)
+
+	A := mat.NewDense(n, m, nil)
+	for i := 0; i < n; i++ {
+		for j := 0; j < m; j++ {
+			A.Set(i, j, 2.0*rand.Float64()-1.0)
+		}
+	}
+
+	x := make([]float64, m)
+	X := mat.NewVecDense(m, x)
+
+	fmt.Println("Solving A * X = Y")
+	err := X.SolveVec(A, Y)
+	if err != nil {
+		fmt.Println("ERR -", err)
+	}
+
+	yp := make([]float64, n)
+	Yp := mat.NewVecDense(n, yp)
+	Yp.MulVec(A, X)
+	fmt.Println("y: ", y[:3])
+	fmt.Println("yp:", yp[:3])
 }
 
 //#############################################################
@@ -58,7 +93,7 @@ func test02() {
 func (mat matrix) pInverse() matrix {
 	N := mat.nrOfRows()
 	M := mat.nrOfColumns()
-	if N < M {
+	if N > M {
 		panic("*** ERROR *** pInverse with nrOfRows > nrOfColumns")
 	}
 	res := mat.transpose().multFactor(0.02 / float64(N))
@@ -66,29 +101,6 @@ func (mat matrix) pInverse() matrix {
 		res = res.multFactor(2.0).min(res.mult(mat).mult(res))
 	}
 	return res
-}
-
-//#############################################################
-// SOR
-//#############################################################
-
-func sor(a matrix, b vector, x vector, w float64) vector {
-	n := len(x)
-	x_new := newVector(n)
-	for i := 0; i < n; i++ {
-		x_new[i] = b[i]
-		for j := 0; j < i; j++ {
-			x_new[i] -= a[i][j] * x_new[j]
-		}
-		for j := i + 1; j < n; j++ {
-			x_new[i] -= a[i][j] * x[j]
-		}
-		x_new[i] /= a[i][i]
-	}
-	for i := 0; i < n; i++ {
-		x_new[i] = (1.0-w)*x[i] + w*x_new[i]
-	}
-	return x_new
 }
 
 //#############################################################
@@ -202,6 +214,17 @@ func (mat matrix) isInverseOf(mat2 matrix, tol float64) bool {
 	return true
 }
 
+func (mat matrix) dif(mat2 matrix) float64 {
+	diff := 0.0
+	for rix := 0; rix < mat.nrOfRows(); rix++ {
+		for cix := 0; cix < mat2.nrOfColumns(); cix++ {
+			d := mat[rix][cix] - mat2[rix][cix]
+			diff += d * d
+		}
+	}
+	return math.Sqrt(diff)
+}
+
 //#############################################################
 // Vector
 //#############################################################
@@ -226,6 +249,23 @@ func (vec vector) min(vec2 vector) vector {
 		v[ix] = vec[ix] - vec2[ix]
 	}
 	return v
+}
+
+func (vec vector) dif(vec2 vector) float64 {
+	diff := 0.0
+	for ix := range vec {
+		d := vec[ix] - vec2[ix]
+		diff += d * d
+	}
+	return math.Sqrt(diff)
+}
+
+func (vec vector) asMatrix() matrix {
+	m := newMatrix(len(vec), 1)
+	for ix := range vec {
+		m[ix][0] = vec[ix]
+	}
+	return m
 }
 
 //#############################################################
