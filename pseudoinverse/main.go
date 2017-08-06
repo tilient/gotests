@@ -53,8 +53,8 @@ func test02() {
 
 func test03() {
 	// try to solve X for A * X = Y given A and Y
-	n := 4 * 1024
-	m := 8 * 1024
+	n := 512
+	m := 512
 
 	y := make([]float64, n)
 	for i := 0; i < n; i++ {
@@ -68,9 +68,12 @@ func test03() {
 			A.Set(i, j, 2.0*rand.Float64()-1.0)
 		}
 	}
-
 	x := make([]float64, m)
 	X := mat.NewVecDense(m, x)
+	yp := make([]float64, n)
+	Yp := mat.NewVecDense(n, yp)
+
+	// Option 1
 
 	fmt.Println("Solving A * X = Y")
 	err := X.SolveVec(A, Y)
@@ -78,8 +81,16 @@ func test03() {
 		fmt.Println("ERR -", err)
 	}
 
-	yp := make([]float64, n)
-	Yp := mat.NewVecDense(n, yp)
+	Yp.MulVec(A, X)
+	fmt.Println("y: ", y[:3])
+	fmt.Println("yp:", yp[:3])
+
+	// Option 2
+
+	fmt.Println("Calculating Ainv")
+	Ainv := pInv(A)
+	fmt.Println("Calculated Ainv")
+	X.MulVec(Ainv, Y)
 	Yp.MulVec(A, X)
 	fmt.Println("y: ", y[:3])
 	fmt.Println("yp:", yp[:3])
@@ -88,6 +99,45 @@ func test03() {
 //#############################################################
 // Pseudo Inverse
 //  Ben-Israel and Cohen Iteration: Xn+1 = 2 * Xn - Xn * m * Xn
+//#############################################################
+
+func pInv(m *mat.Dense) *mat.Dense {
+	N, M := m.Dims()
+	res := mat.DenseCopyOf(m.T())
+	res.Scale(0.02/float64(N), res)
+	tmp2 := mat.NewDense(M, M, nil)
+	tmp1 := mat.NewDense(M, N, nil)
+	tmp3 := mat.NewDense(M, N, nil)
+	for !isInvOf(res, m, 0.01) {
+		//res = (2.0 * res) - (res * m * res)
+		tmp1.Scale(2.0, res)
+		tmp2.Mul(res, m)
+		tmp3.Mul(tmp2, res)
+		res.Sub(tmp1, tmp3)
+	}
+	return res
+}
+
+func isInvOf(m1, m2 *mat.Dense, tol float64) bool {
+	N, _ := m1.Dims()
+	_, M := m2.Dims()
+	mid := mat.NewDense(N, M, nil)
+	mid.Mul(m1, m2)
+	for rix := 0; rix < N; rix++ {
+		for cix := 0; cix < M; cix++ {
+			v := mid.At(rix, cix)
+			if rix == cix {
+				v -= 1.0
+			}
+			v = math.Abs(v)
+			if v > tol {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 //#############################################################
 
 func (mat matrix) pInverse() matrix {
