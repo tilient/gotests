@@ -13,10 +13,10 @@ func NewVector(length int) Vector {
 	return make(Vector, length)
 }
 
-func RandomVector(length int, factor float64) Vector {
+func RandomVector(length int) Vector {
 	vec := make(Vector, length)
 	for ix := range vec {
-		vec[ix] = factor * rand.Float64()
+		vec[ix] = 2.0*rand.Float64() - 1.0
 	}
 	return vec
 }
@@ -30,8 +30,13 @@ func (vec Vector) Min(vec2 Vector) Vector {
 }
 
 func (vec Vector) Print() {
-	for _, v := range vec {
+	const maxIx = 4
+	for ix, v := range vec {
 		fmt.Printf("%5.2f ", v)
+		if ix >= maxIx {
+			fmt.Printf("..")
+			return
+		}
 	}
 }
 

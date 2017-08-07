@@ -18,8 +18,8 @@ func testFun(a, b, c, d float64) float64 {
 }
 
 func test03() {
-	n := 128
-	m := 4 * 128
+	n := 1024
+	m := 32 * 1024
 
 	A := mat.NewDense(n, m, nil)
 	for i := 0; i < n; i++ {
@@ -29,7 +29,6 @@ func test03() {
 	}
 	y := make([]float64, n)
 	for i := 0; i < n; i++ {
-		//y[i] = 2.0*rand.Float64() - 1.0
 		y[i] = testFun(
 			A.At(i, 0), A.At(i, 1),
 			A.At(i, 2), A.At(i, 3))
@@ -47,13 +46,13 @@ func test03() {
 		fmt.Println("ERR -", err)
 	}
 
-	Yp.MulVec(A, X)
-	fmt.Println("x: ", x[:3])
 	fmt.Println("y: ", y[:3])
+	Yp.MulVec(A, X)
 	fmt.Println("yp:", yp[:3])
 	delta := 0.1
 	for mat.EqualApprox(Y, Yp, delta) {
 		delta /= 10.0
 	}
 	fmt.Println("delta:", 10.0*delta)
+
 }

@@ -2,22 +2,69 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"runtime"
 	"time"
 
-  . "github.com/tilient/gotests/matrixfactorization/matrix"
+	. "github.com/tilient/gotests/matrixfactorization/matrix"
 )
 
 //------------------------------------------------------------
 
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
-	fmt.Println("=== simple matrix factorization ===")
-	R := ArtificialMatrix(22, 22)
-	K := 3
+	fmt.Println("===================================")
+	fmt.Println("=== Simple Matrix Factorization ===")
+	fmt.Println("===================================")
+	n, m := 8, 32
+	R := RandomMatrix(m, n)
+	for i := 0; i < n; i++ {
+		R[0][i] = 0.5 *
+			(2*R[1][i] + 3*R[2][i] + 4*math.Sin(R[3][i]))
+	}
+	K := 8
 	P, Q := matrixFactorization(R, K)
-	fmt.Println("err:", factorizationError(R, P, Q))
+	fmt.Println("err =", factorizationError(R, P, Q))
+	fmt.Println("-- R ------------------------------")
+	R.Print()
+	fmt.Println("-- Rp -----------------------------")
+	Rp := P.Mult(Q)
+	Rp.Print()
+	fmt.Println("-- diff ---------------------------")
+	diff := Rp.Min(R).Abs()
+	diff.Print()
+	fmt.Println("-- P ------------------------------")
+	P.Print()
+	fmt.Println("-- Q ------------------------------")
+	Q.Print()
+	fmt.Println("===================================")
+	fmt.Println("== Prediction                    ==")
+	fmt.Println("===================================")
+	r := RandomMatrix(m, 1)
+	r[0][0] = 0.0
+	v := 0.5 * (2*r[1][0] + 3*r[2][0] + 4*math.Sin(r[3][0]))
+	fmt.Println("v =", v)
+	q := RandomMatrix(K, 1)
+	q.Solve(P, r)
+	fmt.Println("-- q ------------------------------")
+	q.Print()
+	fmt.Println("-- rp -- (= P * q) ----------------")
+	rp := P.Mult(q)
+	rp.Print()
+	fmt.Println("-- r ------------------------------")
+	r.Print()
+	fmt.Println("-----------------------------------")
+	for i := 0; i < 10; i++ {
+		r = RandomMatrix(m, 1)
+		r[0][0] = 0.0
+		v = 0.1 * (2*r[1][0] + 3*r[2][0] + 4*math.Sin(r[3][0]))
+		q.Solve(P, r)
+		rp := P.Mult(q)
+		p := rp[0][0]
+		//fmt.Println(i, "- v =", v, "p =", p)
+		fmt.Println("   [", math.Abs(p-v), "]", v)
+	}
 	fmt.Println("===================================")
 }
 
@@ -30,8 +77,7 @@ func matrixFactorization(R Matrix, K int) (Matrix, Matrix) {
 	N := R.NrOfRows()
 	M := R.NrOfColumns()
 	maxSteps := 1000 * K * M * N
-	fmt.Println("-----------------------------------")
-	fmt.Println("R =", M, "x", N)
+	fmt.Println("R =", N, "x", M)
 	fmt.Println("K =", K)
 	fmt.Println("max steps =", maxSteps)
 
@@ -43,8 +89,8 @@ func matrixFactorization(R Matrix, K int) (Matrix, Matrix) {
 	coordinates := make(chan coordinate, maxNrOfIxs)
 	coordsDone := make(chan coordinate, maxNrOfIxs)
 
-	P := RandomMatrix(N, K, 10.0)
-	Q := RandomMatrix(K, M, 10.0)
+	P := RandomMatrix(N, K)
+	Q := RandomMatrix(K, M)
 
 	for id := range workers {
 		go func(id int) {
@@ -105,7 +151,7 @@ func factorizationError(R, P, Q Matrix) float64 {
 			e += eRij * eRij
 		}
 	}
-	return e
+	return math.Sqrt(e)
 }
 
 //------------------------------------------------------------
