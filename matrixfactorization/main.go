@@ -17,27 +17,35 @@ func main() {
 	fmt.Println("===================================")
 	fmt.Println("=== Simple Matrix Factorization ===")
 	fmt.Println("===================================")
-	n, m := 32, 8
+	n, m := 32, 128
 	R := RandomMatrix(n, m)
 	for i := 0; i < n; i++ {
 		R[i][0] = R[i][1] + R[i][2]*R[i][3]
+		R[i][10] = R[i][11] + R[i][12]*R[i][13]
 	}
 	K := 4
 	P := RandomMatrix(n, K)
 	Q := RandomMatrix(K, m)
-	v := R[0][0]
+	v1 := R[0][0]
+	v2 := R[0][10]
 	R[0][0] = 100.0
+	R[0][10] = 100.0
 	matrixFactorization(R, K, P, Q)
 	Rp := P.Mult(Q)
-	vp := Rp[0][0]
-	R[0][0] = v
+	vp1 := Rp[0][0]
+	vp2 := Rp[0][10]
+	R[0][0] = v1
+	R[0][10] = v2
 	fmt.Println("-- diff ---------------------------")
 	diff := Rp.Min(R).Abs()
 	diff.Print()
 	fmt.Println("===================================")
-	fmt.Println("R [0][0] =", v)
-	fmt.Println("Rp[0][0] =", vp)
-	fmt.Println("diff =", math.Abs(vp-v))
+	fmt.Println("R [0][0] =", v1)
+	fmt.Println("Rp[0][0] =", vp1)
+	fmt.Println("diff =", math.Abs(vp1-v1))
+	fmt.Println("R [0][10] =", v2)
+	fmt.Println("Rp[0][10] =", vp2)
+	fmt.Println("diff =", math.Abs(vp2-v2))
 	fmt.Println("===================================")
 }
 
