@@ -17,89 +17,62 @@ func main() {
 	fmt.Println("===================================")
 	fmt.Println("=== Simple Matrix Factorization ===")
 	fmt.Println("===================================")
-	n, m := 8, 32
-	R := RandomMatrix(m, n)
+	n, m := 4, 8
+	R := RandomMatrix(n, m)
 	for i := 0; i < n; i++ {
-		R[0][i] = 0.5 *
-			(2*R[1][i] + 3*R[2][i] + 4*math.Sin(R[3][i]))
+		R[i][0] = R[i][1] + R[i][2]*R[i][3]
 	}
-	K := 8
-	P, Q := matrixFactorization(R, K)
+	K := 4
+	v := R[0][0]
+	P := RandomMatrix(n, K)
+	Q := RandomMatrix(K, m)
+	R[0][0] = 100.0
+	matrixFactorization(R, K, P, Q)
 	fmt.Println("err =", factorizationError(R, P, Q))
-	fmt.Println("-- R ------------------------------")
-	R.Print()
-	fmt.Println("-- Rp -----------------------------")
+	R[0][0] = v
 	Rp := P.Mult(Q)
-	Rp.Print()
+	vp := Rp[0][0]
 	fmt.Println("-- diff ---------------------------")
 	diff := Rp.Min(R).Abs()
 	diff.Print()
-	fmt.Println("-- P ------------------------------")
-	P.Print()
-	fmt.Println("-- Q ------------------------------")
-	Q.Print()
 	fmt.Println("===================================")
-	fmt.Println("== Prediction                    ==")
-	fmt.Println("===================================")
-	r := RandomMatrix(m, 1)
-	r[0][0] = 0.0
-	v := 0.5 * (2*r[1][0] + 3*r[2][0] + 4*math.Sin(r[3][0]))
-	fmt.Println("v =", v)
-	q := RandomMatrix(K, 1)
-	q.Solve(P, r)
-	fmt.Println("-- q ------------------------------")
-	q.Print()
-	fmt.Println("-- rp -- (= P * q) ----------------")
-	rp := P.Mult(q)
-	rp.Print()
-	fmt.Println("-- r ------------------------------")
-	r.Print()
-	fmt.Println("-----------------------------------")
-	for i := 0; i < 10; i++ {
-		r = RandomMatrix(m, 1)
-		r[0][0] = 0.0
-		v = 0.1 * (2*r[1][0] + 3*r[2][0] + 4*math.Sin(r[3][0]))
-		q.Solve(P, r)
-		rp := P.Mult(q)
-		p := rp[0][0]
-		//fmt.Println(i, "- v =", v, "p =", p)
-		fmt.Println("   [", math.Abs(p-v), "]", v)
-	}
+	fmt.Println("R [0][0] =", v)
+	fmt.Println("Rp[0][0] =", vp)
+	fmt.Println("diff =", math.Abs(vp-v))
 	fmt.Println("===================================")
 }
 
 //------------------------------------------------------------
 
-func matrixFactorization(R Matrix, K int) (Matrix, Matrix) {
-	const alpha = 0.0002 // the learning rate
+func matrixFactorization(R Matrix, K int, P Matrix, Q Matrix) {
+	const alpha = 0.0005 // the learning rate
 	const beta = 0.02    // the regularization parameter
 
 	N := R.NrOfRows()
 	M := R.NrOfColumns()
-	maxSteps := 1000 * K * M * N
-	fmt.Println("R =", N, "x", M)
-	fmt.Println("K =", K)
-	fmt.Println("max steps =", maxSteps)
+	maxSteps := 50000 * K * M * N
+	//fmt.Println("R =", N, "x", M)
+	//fmt.Println("K =", K)
+	//fmt.Println("max steps =", maxSteps)
 
 	nrOfWorkers := 2 * maxInt(1, runtime.NumCPU()-2)
-	fmt.Println("nr of workers", nrOfWorkers)
-	fmt.Println("-----------------------------------")
+	//fmt.Println("nr of workers", nrOfWorkers)
+	//fmt.Println("-----------------------------------")
 	workers := newIntRange(nrOfWorkers)
 	maxNrOfIxs := minInt(N, M)
 	coordinates := make(chan coordinate, maxNrOfIxs)
 	coordsDone := make(chan coordinate, maxNrOfIxs)
-
-	P := RandomMatrix(N, K)
-	Q := RandomMatrix(K, M)
 
 	for id := range workers {
 		go func(id int) {
 			for c := range coordinates {
 				i, j := c.i, c.j
 				e := matrixMultErrorAt(R, P, Q, i, j)
-				for k := 0; k < K; k++ {
-					P[i][k] += alpha * (2*e*Q[k][j] - beta*P[i][k])
-					Q[k][j] += alpha * (2*e*P[i][k] - beta*Q[k][j])
+				if e != 0.0 {
+					for k := 0; k < K; k++ {
+						P[i][k] += alpha * (2*e*Q[k][j] - beta*P[i][k])
+						Q[k][j] += alpha * (2*e*P[i][k] - beta*Q[k][j])
+					}
 				}
 				coordsDone <- coordinate{i, j}
 			}
@@ -119,14 +92,16 @@ func matrixFactorization(R Matrix, K int) (Matrix, Matrix) {
 	}
 	close(coordinates)
 	close(coordsDone)
-	return P, Q
 }
 
 //------------------------------------------------------------
 
 func matrixMultErrorAt(R, P, Q Matrix, i, j int) float64 {
-	K := Q.NrOfRows()
 	e := R[i][j]
+	if e > 99.9 {
+		return 0.0
+	}
+	K := Q.NrOfRows()
 	for k := 0; k < K; k++ {
 		e -= P[i][k] * Q[k][j]
 	}
@@ -140,15 +115,18 @@ func factorizationError(R, P, Q Matrix) float64 {
 	e := 0.0
 	for i := 0; i < N; i++ {
 		for j := 0; j < M; j++ {
-			pRij := 0.0
-			for k := 0; k < K; k++ {
-				Pik := P[i][k]
-				Qkj := Q[k][j]
-				//? e += (beta / 2.0) * (Pik*Pik + Qkj*Qkj)
-				pRij += Pik * Qkj
+			r := R[i][j]
+			if r < 99.9 {
+				pRij := 0.0
+				for k := 0; k < K; k++ {
+					Pik := P[i][k]
+					Qkj := Q[k][j]
+					//? e += (beta / 2.0) * (Pik*Pik + Qkj*Qkj)
+					pRij += Pik * Qkj
+				}
+				eRij := r - pRij
+				e += eRij * eRij
 			}
-			eRij := R[i][j] - pRij
-			e += eRij * eRij
 		}
 	}
 	return math.Sqrt(e)
