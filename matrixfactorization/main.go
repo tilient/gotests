@@ -17,21 +17,20 @@ func main() {
 	fmt.Println("===================================")
 	fmt.Println("=== Simple Matrix Factorization ===")
 	fmt.Println("===================================")
-	n, m := 4, 8
+	n, m := 32, 8
 	R := RandomMatrix(n, m)
 	for i := 0; i < n; i++ {
 		R[i][0] = R[i][1] + R[i][2]*R[i][3]
 	}
 	K := 4
-	v := R[0][0]
 	P := RandomMatrix(n, K)
 	Q := RandomMatrix(K, m)
+	v := R[0][0]
 	R[0][0] = 100.0
 	matrixFactorization(R, K, P, Q)
-	fmt.Println("err =", factorizationError(R, P, Q))
-	R[0][0] = v
 	Rp := P.Mult(Q)
 	vp := Rp[0][0]
+	R[0][0] = v
 	fmt.Println("-- diff ---------------------------")
 	diff := Rp.Min(R).Abs()
 	diff.Print()
@@ -45,19 +44,18 @@ func main() {
 //------------------------------------------------------------
 
 func matrixFactorization(R Matrix, K int, P Matrix, Q Matrix) {
-	const alpha = 0.0005 // the learning rate
+	const alpha = 0.0002 // the learning rate
 	const beta = 0.02    // the regularization parameter
 
 	N := R.NrOfRows()
 	M := R.NrOfColumns()
-	maxSteps := 50000 * K * M * N
-	//fmt.Println("R =", N, "x", M)
-	//fmt.Println("K =", K)
-	//fmt.Println("max steps =", maxSteps)
-
+	maxSteps := 65536 * K * M * N
+	fmt.Println("R =", N, "x", M)
+	fmt.Println("K =", K)
+	fmt.Println("max steps =", maxSteps)
 	nrOfWorkers := 2 * maxInt(1, runtime.NumCPU()-2)
-	//fmt.Println("nr of workers", nrOfWorkers)
-	//fmt.Println("-----------------------------------")
+	fmt.Println("nr of workers", nrOfWorkers)
+	fmt.Println("-----------------------------------")
 	workers := newIntRange(nrOfWorkers)
 	maxNrOfIxs := minInt(N, M)
 	coordinates := make(chan coordinate, maxNrOfIxs)
