@@ -20,7 +20,7 @@ __kernel void heatStencil(
 `
 
 const (
-	N       = 512 + 2
+	N       = 4*512 + 2
 	mean    = 74.95107632093934
 	epsilon = 0.001
 )
@@ -84,7 +84,9 @@ func newOpenClContext() (*cl.Context, *cl.CommandQueue) {
 		fmt.Printf("\nGetDevices returned no devices")
 	}
 	deviceIndex := -1
+	fmt.Printf("\n--- Candidates ---")
 	for i, d := range devices {
+		fmt.Printf("\nDevice %d (%s): %s", i, d.Type(), d.Name())
 		if deviceIndex < 0 && d.Type() == cl.DeviceTypeGPU {
 			deviceIndex = i
 		}
@@ -92,8 +94,12 @@ func newOpenClContext() (*cl.Context, *cl.CommandQueue) {
 	if deviceIndex < 0 {
 		deviceIndex = 0
 	}
-  deviceIndex = 0
+	deviceIndex = 0
 	device := devices[deviceIndex]
+	fmt.Printf("\n--- Selected ---")
+	fmt.Printf("\nDevice %d (%s): %s",
+		deviceIndex, device.Type(), device.Name())
+	fmt.Printf("\n--- --- ---\n")
 
 	context, err := cl.CreateContext([]*cl.Device{device})
 	if err != nil {
