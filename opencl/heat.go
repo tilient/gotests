@@ -4,26 +4,169 @@ import (
 	"fmt"
 	"github.com/exascience/pargo/parallel"
 	"github.com/samuel/go-opencl/cl"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
 
-const (
-	block   = 16
-	N       = block*128 + 2
-	mean    = 74.95107632093934
-	epsilon = 0.001
-	clGPU   = cl.DeviceTypeGPU
-	clCPU   = cl.DeviceTypeCPU
-)
-
 func main() {
-	fmt.Printf("\nmatrix: %v x %v\n\n", N, N)
-	fmt.Printf("\ntook %v seconds\n", openClTest(clGPU))
-	fmt.Printf("\ntook %v seconds\n", openClTest(clCPU))
-	fmt.Printf("\ntook %v seconds\n", testPargo())
-	fmt.Printf("\ntook %v seconds\n", test02())
-	fmt.Printf("\ntook %v seconds\n", test01())
+	const N = 512 + 2
+	sep := strings.Repeat("=", 48)
+	fmt.Printf("%v\nmatrix: %v x %v\n%v\n", sep, N, N, sep)
+	heatTestOpenCl(N, N, cl.DeviceTypeGPU)
+	heatTestOpenCl(N, N, cl.DeviceTypeCPU)
+	heatTest("pargo", N, N, pargoHeatStep)
+	heatTest("pargo2", N, N, pargoHeatStep2)
+	heatTest("parallel", N, N, parallelHeatStep)
+	heatTest("sequential", N, N, sequentialHeatStep)
+	fmt.Println(sep)
+}
+
+// ----------------------------------------------------------
+// --- heat test --------------------------------------------
+// ----------------------------------------------------------
+
+const ε = float32(0.001)
+
+func heatTest(title string, M, N int,
+	heatStepFun func(u, w *matrix)) {
+
+	sep := strings.Repeat("-", 48)
+	fmt.Printf("\n%v\n%v\n%v\n", sep, title, sep)
+
+	u := makeHeatTestMatrix(M, N)
+	w := makeHeatTestMatrix(M, N)
+
+	iterations := 0
+	δ := ε + 1.0
+	start := time.Now()
+	for δ >= ε {
+		for t := 0; t < 1000; t++ {
+			heatStepFun(w, u)
+			heatStepFun(u, w)
+		}
+		δ = w.maxDiff(u)
+		iterations += 2000
+		fmt.Printf(
+			"iters: %6d, δ: %08.6f, w[8][8]: %10.8f\n",
+			iterations, δ, w.get(8, 8))
+	}
+	fmt.Printf("\ntook %6.4f seconds\n",
+		time.Now().Sub(start).Seconds())
+}
+
+// ----------------------------------------------------------
+
+func sequentialHeatStep(w, u *matrix) {
+	heatStepRows(w, u, 1, w.nrOfColumns-1)
+}
+
+func parallelHeatStep(w, u *matrix) {
+	cores := runtime.NumCPU()
+	var wg sync.WaitGroup
+	wg.Add(cores)
+	blocksize := (w.nrOfRows - 2) / cores
+	for row := 1; row < w.nrOfRows-1; row += blocksize {
+		go func(from, to int) {
+			heatStepRows(w, u, from, to)
+			wg.Done()
+		}(row, row+blocksize)
+	}
+	wg.Wait()
+}
+
+func pargoHeatStep(w, u *matrix) {
+	parallel.Range(1, w.nrOfRows-1, 0,
+		func(low, high int) {
+			heatStepRows(w, u, low, high)
+		})
+}
+
+func pargoHeatStep2(w, u *matrix) {
+	parallel.Range(1, w.nrOfRows-1, 0, heatStepRowsOn(w, u))
+}
+
+// ----------------------------------------------------------
+
+func heatStepRowsOn(w, u *matrix) func(from, to int) {
+	return func(from, to int) {
+		heatStepRows(w, u, from, to)
+	}
+}
+
+func heatStepRows(w, u *matrix, from, to int) {
+	for row := from; row < to; row++ {
+		heatStepRow(w, u, row)
+	}
+}
+
+func heatStepRow(w, u *matrix, row int) {
+	for col := 1; col < w.nrOfColumns-1; col++ {
+		w.set(row, col,
+			(u.get(row-1, col)+u.get(row+1, col)+
+				u.get(row, col-1)+u.get(row, col+1))/4.0)
+	}
+}
+
+//-----------------------------------------------------------
+// --- matrix -----------------------------------------------
+//-----------------------------------------------------------
+
+type matrix struct {
+	nrOfRows    int
+	nrOfColumns int
+	data        []float32
+}
+
+func makeHeatTestMatrix(M, N int) *matrix {
+	var mat matrix
+	mat.nrOfRows = M
+	mat.nrOfColumns = N
+	mat.data = make([]float32, M*N)
+	mat.fill(74.95107632093934)
+	mat.fillBorders(0.0, 100.0, 100.0, 100.0)
+	return &mat
+}
+
+func (m *matrix) get(r, c int) float32 {
+	return m.data[r*m.nrOfColumns+c]
+}
+
+func (m *matrix) set(r, c int, v float32) {
+	m.data[r*m.nrOfColumns+c] = v
+}
+
+func (m *matrix) fill(v float32) {
+	for i, _ := range m.data {
+		m.data[i] = v
+	}
+}
+
+func (m *matrix) fillBorders(t, r, b, l float32) {
+	N := m.nrOfColumns
+	M := m.nrOfRows
+	for i := 0; i < N; i++ {
+		m.data[i] = t
+		m.data[(M-1)*N+i] = b
+	}
+	for i := 0; i < M; i++ {
+		m.data[i*N] = l
+		m.data[i*N+N-1] = r
+	}
+}
+
+func (m *matrix) maxDiff(m2 *matrix) (result float32) {
+	for ix, v := range m.data {
+		δ := v - m2.data[ix]
+		if δ < 0.0 {
+			δ = -δ
+		}
+		if δ > result {
+			result = δ
+		}
+	}
+	return result
 }
 
 // ----------------------------------------------------------
@@ -44,29 +187,31 @@ __kernel void heatStencil(
 }
 `
 
-func openClTest(deviceType cl.DeviceType) float64 {
+func heatTestOpenCl(M, N int, deviceType cl.DeviceType) {
 	context, queue := newOpenClContext(deviceType)
 	if context == nil {
 		fmt.Println("--- Device not found ---", deviceType)
-		return 0.0
+		return
 	}
 
-	mat1 := makeHeatTestMatrix()
-	a, _ := context.CreateEmptyBuffer(cl.MemReadWrite, 4*N*N)
-	queue.EnqueueWriteBufferFloat32(a, true, 0, mat1[:], nil)
+	w := makeHeatTestMatrix(M, N)
+	u := makeHeatTestMatrix(M, N)
 
-	mat2 := makeHeatTestMatrix()
-	b, _ := context.CreateEmptyBuffer(cl.MemReadWrite, 4*N*N)
-	queue.EnqueueWriteBufferFloat32(b, true, 0, mat2[:], nil)
+	a, _ := context.CreateEmptyBuffer(cl.MemReadWrite, 4*M*N)
+	b, _ := context.CreateEmptyBuffer(cl.MemReadWrite, 4*M*N)
+	queue.EnqueueWriteBufferFloat32(
+		a, true, 0, w.data[:], nil)
+	queue.EnqueueWriteBufferFloat32(
+		b, true, 0, u.data[:], nil)
 
 	kernel := buildOpenClKernel(
 		context, kernelSource, "heatStencil")
-	global := []int{N - 2, N - 2}
+	global := []int{N - 2, M - 2}
 	local := []int{32, 1}
 	cnt := 0
-	diff := float32(1.0 + epsilon)
+	δ := ε + 1.0
 	start := time.Now()
-	for diff > epsilon {
+	for δ > ε {
 		cnt += 1
 		for t := 0; t < 1000; t++ {
 			kernel.SetArgs(b, a)
@@ -77,26 +222,23 @@ func openClTest(deviceType cl.DeviceType) float64 {
 				kernel, nil, global, local, nil)
 		}
 		queue.Finish()
-		queue.EnqueueReadBufferFloat32(a, true, 0, mat1, nil)
-		queue.EnqueueReadBufferFloat32(b, true, 0, mat2, nil)
-		diff = mat1.maxDiff(mat2)
-		fmt.Println(
-			"iteration: ", 2000*cnt,
-			", diff: ", diff,
-			" check: ", mat1[10*N+10])
+		queue.EnqueueReadBufferFloat32(a, true, 0, w.data, nil)
+		queue.EnqueueReadBufferFloat32(b, true, 0, u.data, nil)
+		δ = w.maxDiff(u)
+		fmt.Printf(
+			"iters: %6d, δ: %08.6f, w[8][8]: %10.8f\n",
+			2000*cnt, δ, w.get(8, 8))
 	}
-	return time.Now().Sub(start).Seconds()
+	fmt.Printf("\ntook %6.4f seconds\n",
+		time.Now().Sub(start).Seconds())
 }
-
-// ----------------------------------------------------------
-// --- opencl -----------------------------------------------
-// ----------------------------------------------------------
 
 func newOpenClContext(
 	deviceType cl.DeviceType) (*cl.Context, *cl.CommandQueue) {
 	platforms, err := cl.GetPlatforms()
 	if err != nil {
 		fmt.Printf("\nFailed to get platforms: %+v", err)
+		return nil, nil
 	}
 	if len(platforms) < 1 {
 		fmt.Printf("\nNo OpenCL Platforms Found ")
@@ -107,9 +249,11 @@ func newOpenClContext(
 	devices, err := platform.GetDevices(cl.DeviceTypeAll)
 	if err != nil {
 		fmt.Printf("\nFailed to get devices: %+v", err)
+		return nil, nil
 	}
 	if len(devices) == 0 {
 		fmt.Printf("\nGetDevices returned no devices")
+		return nil, nil
 	}
 	deviceIndex := -1
 	for i, d := range devices {
@@ -118,21 +262,23 @@ func newOpenClContext(
 		}
 	}
 	if deviceIndex < 0 {
-		deviceIndex = 0
+		fmt.Printf("\nDid not find right device")
 		return nil, nil
 	}
 	device := devices[deviceIndex]
-	fmt.Printf("\nDevice %d (%s): %s\n",
-		deviceIndex, device.Type(), device.Name())
-	fmt.Println("--------------")
+	sep := strings.Repeat("-", 48)
+	fmt.Printf("\n%v\n%v: %v\n%v\n",
+		sep, device.Type(), device.Name(), sep)
 
 	context, err := cl.CreateContext([]*cl.Device{device})
 	if err != nil {
 		fmt.Printf("\nCreateContext failed: %+v", err)
+		return nil, nil
 	}
 	queue, err := context.CreateCommandQueue(device, 0)
 	if err != nil {
 		fmt.Printf("\nCreateCommandQueue failed: %+v", err)
+		return nil, nil
 	}
 	return context, queue
 }
@@ -158,175 +304,13 @@ func buildOpenClProgram(
 	return program
 }
 
-func buildKernel(program *cl.Program, kernelName string) *cl.Kernel {
+func buildKernel(
+	program *cl.Program, kernelName string) *cl.Kernel {
 	kernel, err := program.CreateKernel(kernelName)
 	if err != nil {
 		fmt.Printf("\nCreateKernel failed: %+v", err)
 	}
 	return kernel
-}
-
-// --- heat -------------------------------------------------
-
-func test01() float64 {
-	fmt.Println("\nNormal Version")
-	fmt.Println("--------------")
-
-	u := makeHeatTestMatrix()
-	w := makeHeatTestMatrix()
-
-	iterations := 0
-	var diff float32 = 1.0 + epsilon
-	start := time.Now()
-	for epsilon <= diff {
-		for t := 0; t < 1000; t++ {
-			heatStep(w, u)
-			heatStep(u, w)
-		}
-		iterations += 2000
-		diff = w.maxDiff(u)
-		fmt.Println(
-			"iteration: ", iterations,
-			", diff: ", diff,
-			" check: ", w[10*N+10])
-	}
-	return time.Now().Sub(start).Seconds()
-}
-
-func test02() float64 {
-	fmt.Println("\nParallel Version")
-	fmt.Println("----------------")
-
-	u := makeHeatTestMatrix()
-	w := makeHeatTestMatrix()
-
-	iterations := 0
-	var diff float32 = 1.0 + epsilon
-	start := time.Now()
-	for epsilon <= diff {
-		for t := 0; t < 1000; t++ {
-			pHeatStep(w, u)
-			pHeatStep(u, w)
-		}
-		iterations += 2000
-		diff = w.maxDiff(u)
-		fmt.Println(
-			"iteration: ", iterations,
-			", diff: ", diff,
-			" check: ", w[10*N+10])
-	}
-	return time.Now().Sub(start).Seconds()
-}
-
-func heatStepLines(w matrix, u matrix, ix int) {
-	for i := ix; i < ix+block; i++ {
-		for j := 1; j < N-1; j++ {
-			w[(i*N)+j] = (u[(i-1)*N+j] + u[(i+1)*N+j] +
-				u[(i*N)+j-1] + u[(i*N)+j+1]) / 4.0
-		}
-	}
-}
-
-func heatStep(w matrix, u matrix) {
-	for i := 1; i < N-1; i += block {
-		heatStepLines(w, u, i)
-	}
-}
-
-func pHeatStep(w matrix, u matrix) {
-	var wg sync.WaitGroup
-	wg.Add((N - 2) / block)
-	for i := 1; i < N-1; i += block {
-		go func(i int) {
-			heatStepLines(w, u, i)
-			wg.Done()
-		}(i)
-	}
-	wg.Wait()
-}
-
-func heatStepLine(w matrix, u matrix, i int) {
-	for j := 1; j < N-1; j++ {
-		w[(i*N)+j] = (u[(i-1)*N+j] + u[(i+1)*N+j] +
-			u[(i*N)+j-1] + u[(i*N)+j+1]) / 4.0
-	}
-}
-
-func pargoHeatStep(w matrix, u matrix) {
-	parallel.Range(1, N-1, 0,
-		func(low, high int) {
-			for i := low; i < high; i++ {
-				heatStepLine(w, u, i)
-			}
-		})
-}
-
-func testPargo() float64 {
-	fmt.Println("\nPargo Version")
-	fmt.Println("-------------")
-
-	u := makeHeatTestMatrix()
-	w := makeHeatTestMatrix()
-
-	iterations := 0
-	var diff float32 = 1.0 + epsilon
-	start := time.Now()
-	for epsilon <= diff {
-		for t := 0; t < 1000; t++ {
-			pargoHeatStep(w, u)
-			pargoHeatStep(u, w)
-		}
-		iterations += 2000
-		diff = w.maxDiff(u)
-		fmt.Println(
-			"iteration: ", iterations,
-			", diff: ", diff,
-			" check: ", w[10*N+10])
-	}
-	return time.Now().Sub(start).Seconds()
-
-}
-
-//-----------------------------------------------------------
-// --- matrices ---------------------------------------------
-//-----------------------------------------------------------
-
-type matrix []float32
-
-func makeHeatTestMatrix() matrix {
-	m := make(matrix, N*N)
-	m.fill(mean)
-	m.fillBorder(100.0)
-	return m
-}
-
-func (m matrix) fill(v float32) {
-	for i, _ := range m {
-		m[i] = v
-	}
-}
-
-func (m matrix) fillBorder(v float32) {
-	for i := 0; i < N; i++ {
-		m[i*N] = v
-		m[i*N+N-1] = v
-		m[(N-1)*N+i] = v
-		m[i] = 0.0
-	}
-}
-
-func (m matrix) maxDiff(m2 matrix) float32 {
-	result := float32(0.0)
-	for ix, v := range m {
-		diff := v - m2[ix]
-		if diff < 0.0 {
-			diff = -diff
-		}
-		if diff > result {
-			result = diff
-		}
-	}
-	return result
 }
 
 // ----------------------------------------------------------
