@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/exascience/pargo/parallel"
 	"github.com/samuel/go-opencl/cl"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ func main() {
 	fmt.Printf("\nmatrix: %v x %v\n\n", N, N)
 	fmt.Printf("\ntook %v seconds\n", openClTest(clGPU))
 	fmt.Printf("\ntook %v seconds\n", openClTest(clCPU))
+	fmt.Printf("\ntook %v seconds\n", testPargo())
 	fmt.Printf("\ntook %v seconds\n", test02())
 	fmt.Printf("\ntook %v seconds\n", test01())
 }
@@ -66,7 +68,7 @@ func openClTest(deviceType cl.DeviceType) float64 {
 	start := time.Now()
 	for diff > epsilon {
 		cnt += 1
-		for t := 0; t < 500; t++ {
+		for t := 0; t < 1000; t++ {
 			kernel.SetArgs(b, a)
 			queue.EnqueueNDRangeKernel(
 				kernel, nil, global, local, nil)
@@ -79,7 +81,7 @@ func openClTest(deviceType cl.DeviceType) float64 {
 		queue.EnqueueReadBufferFloat32(b, true, 0, mat2, nil)
 		diff = mat1.maxDiff(mat2)
 		fmt.Println(
-			"iteration: ", 1000*cnt,
+			"iteration: ", 2000*cnt,
 			", diff: ", diff,
 			" check: ", mat1[10*N+10])
 	}
@@ -177,11 +179,11 @@ func test01() float64 {
 	var diff float32 = 1.0 + epsilon
 	start := time.Now()
 	for epsilon <= diff {
-		for t := 0; t < 500; t++ {
+		for t := 0; t < 1000; t++ {
 			heatStep(w, u)
 			heatStep(u, w)
 		}
-		iterations += 1000
+		iterations += 2000
 		diff = w.maxDiff(u)
 		fmt.Println(
 			"iteration: ", iterations,
@@ -202,11 +204,11 @@ func test02() float64 {
 	var diff float32 = 1.0 + epsilon
 	start := time.Now()
 	for epsilon <= diff {
-		for t := 0; t < 500; t++ {
+		for t := 0; t < 1000; t++ {
 			pHeatStep(w, u)
 			pHeatStep(u, w)
 		}
-		iterations += 1000
+		iterations += 2000
 		diff = w.maxDiff(u)
 		fmt.Println(
 			"iteration: ", iterations,
@@ -241,6 +243,48 @@ func pHeatStep(w matrix, u matrix) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+func heatStepLine(w matrix, u matrix, i int) {
+	for j := 1; j < N-1; j++ {
+		w[(i*N)+j] = (u[(i-1)*N+j] + u[(i+1)*N+j] +
+			u[(i*N)+j-1] + u[(i*N)+j+1]) / 4.0
+	}
+}
+
+func pargoHeatStep(w matrix, u matrix) {
+	parallel.Range(1, N-1, 0,
+		func(low, high int) {
+			for i := low; i < high; i++ {
+				heatStepLine(w, u, i)
+			}
+		})
+}
+
+func testPargo() float64 {
+	fmt.Println("\nPargo Version")
+	fmt.Println("-------------")
+
+	u := makeHeatTestMatrix()
+	w := makeHeatTestMatrix()
+
+	iterations := 0
+	var diff float32 = 1.0 + epsilon
+	start := time.Now()
+	for epsilon <= diff {
+		for t := 0; t < 1000; t++ {
+			pargoHeatStep(w, u)
+			pargoHeatStep(u, w)
+		}
+		iterations += 2000
+		diff = w.maxDiff(u)
+		fmt.Println(
+			"iteration: ", iterations,
+			", diff: ", diff,
+			" check: ", w[10*N+10])
+	}
+	return time.Now().Sub(start).Seconds()
+
 }
 
 //-----------------------------------------------------------
