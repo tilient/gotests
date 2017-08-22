@@ -11,9 +11,10 @@ import (
 )
 
 func main() {
-	const N = 512 + 2
+	const N = 2048 + 2
 	sep := strings.Repeat("=", 48)
-	fmt.Printf("%v\nmatrix: %v x %v\n%v\n", sep, N, N, sep)
+	fmt.Printf("%v\nmatrix: %v x %v (%v cores)\n%v\n",
+		sep, N, N, runtime.NumCPU(), sep)
 	heatTestOpenCl(N, N, cl.DeviceTypeGPU)
 	heatTestOpenCl(N, N, cl.DeviceTypeCPU)
 	heatTest("pargo", N, N, pargoHeatStep)
@@ -66,12 +67,17 @@ func parallelHeatStep(w, u *matrix) {
 	cores := runtime.NumCPU()
 	var wg sync.WaitGroup
 	wg.Add(cores)
-	blocksize := (w.nrOfRows - 2) / cores
-	for row := 1; row < w.nrOfRows-1; row += blocksize {
-		go func(from, to int) {
+	blocksize := 1 + ((w.nrOfRows - 2) / cores)
+	for c := 0; c < cores; c++ {
+		go func(c int) {
+			from := 1 + c*blocksize
+			to := 1 + (c+1)*blocksize
+			if to > (w.nrOfRows - 2) {
+				to = w.nrOfRows - 1
+			}
 			heatStepRows(w, u, from, to)
 			wg.Done()
-		}(row, row+blocksize)
+		}(c)
 	}
 	wg.Wait()
 }
@@ -237,22 +243,22 @@ func newOpenClContext(
 	deviceType cl.DeviceType) (*cl.Context, *cl.CommandQueue) {
 	platforms, err := cl.GetPlatforms()
 	if err != nil {
-		fmt.Printf("\nFailed to get platforms: %+v", err)
+		fmt.Printf("\nFailed to get platforms: %+v\n", err)
 		return nil, nil
 	}
 	if len(platforms) < 1 {
-		fmt.Printf("\nNo OpenCL Platforms Found ")
+		fmt.Printf("\nNo OpenCL Platforms Found\n")
 		return nil, nil
 	}
 	platform := platforms[0]
 
 	devices, err := platform.GetDevices(cl.DeviceTypeAll)
 	if err != nil {
-		fmt.Printf("\nFailed to get devices: %+v", err)
+		fmt.Printf("\nFailed to get devices: %+v\n", err)
 		return nil, nil
 	}
 	if len(devices) == 0 {
-		fmt.Printf("\nGetDevices returned no devices")
+		fmt.Printf("\nGetDevices returned no devices\n")
 		return nil, nil
 	}
 	deviceIndex := -1
