@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/samuel/go-opencl/cl"
+	"time"
 )
 
 var kernelSource = `
@@ -28,51 +29,71 @@ const (
 type matrix []float32
 
 func main() {
+	fmt.Printf("took %v seconds\n",
+		openClTest(cl.DeviceTypeGPU))
 
-	context, queue := newOpenClContext()
-	program := buildOpenClProgram(context, kernelSource)
-	kernel := buildKernel(program, "heatStencil")
+	fmt.Printf("took %v seconds\n",
+		openClTest(cl.DeviceTypeCPU))
 
-	data := make(matrix, N*N)
-	data2 := make(matrix, N*N)
-	data.fill(mean)
-	data.fillBorder(100.0)
-	data2.fill(mean)
-	data2.fillBorder(100.0)
-	fmt.Println("---1---", data[10*N+10])
+	fmt.Printf("took %v seconds\n",
+		test01())
+
+}
+
+func openClTest(deviceId cl.DeviceType) float64 {
+	mat1 := makeHeatTestMatrix()
+	mat2 := makeHeatTestMatrix()
+
+	context, queue := newOpenClContext(deviceId)
+	if context == nil {
+		fmt.Println("--- Device not found ---")
+		return 0.0
+	}
+	kernel := buildOpenClKernel(
+		context, kernelSource, "heatStencil")
 
 	a, _ := context.CreateEmptyBuffer(cl.MemReadWrite, 4*N*N)
-	queue.EnqueueWriteBufferFloat32(a, true, 0, data[:], nil)
+	queue.EnqueueWriteBufferFloat32(a, true, 0, mat1[:], nil)
 	b, _ := context.CreateEmptyBuffer(cl.MemReadWrite, 4*N*N)
-	queue.EnqueueWriteBufferFloat32(b, true, 0, data[:], nil)
+	queue.EnqueueWriteBufferFloat32(b, true, 0, mat1[:], nil)
 
 	global := []int{N - 2, N - 2}
 	local := []int{32, 1}
 	cnt := 0
 	diff := float32(1.0 + epsilon)
+	start := time.Now()
 	for diff > epsilon {
 		cnt += 1
 		for t := 0; t < 500; t++ {
 			kernel.SetArgs(b, a)
-			queue.EnqueueNDRangeKernel(kernel, nil, global, local, nil)
+			queue.EnqueueNDRangeKernel(
+				kernel, nil, global, local, nil)
 			kernel.SetArgs(a, b)
-			queue.EnqueueNDRangeKernel(kernel, nil, global, local, nil)
+			queue.EnqueueNDRangeKernel(
+				kernel, nil, global, local, nil)
 		}
 		queue.Finish()
-		queue.EnqueueReadBufferFloat32(a, true, 0, data, nil)
-		queue.EnqueueReadBufferFloat32(b, true, 0, data2, nil)
-		diff = data.maxDiff(data2)
-		fmt.Println(cnt, "---", diff, " --- ", data[10*N+10])
+		queue.EnqueueReadBufferFloat32(a, true, 0, mat1, nil)
+		queue.EnqueueReadBufferFloat32(b, true, 0, mat2, nil)
+		diff = mat1.maxDiff(mat2)
+		fmt.Println(
+			"iteration: ", 1000*cnt,
+			", diff: ", diff,
+			" check: ", mat1[10*N+10])
 	}
-
-	queue.EnqueueReadBufferFloat32(a, true, 0, data, nil)
-	fmt.Println("---2---", data[10*N+10])
+	return time.Now().Sub(start).Seconds()
 }
 
-func newOpenClContext() (*cl.Context, *cl.CommandQueue) {
+// --- opencl -----------------------------------------------
+
+func newOpenClContext(
+	deviceType cl.DeviceType) (*cl.Context, *cl.CommandQueue) {
 	platforms, err := cl.GetPlatforms()
 	if err != nil {
 		fmt.Printf("\nFailed to get platforms: %+v", err)
+	}
+	if len(platforms) < 1 {
+		panic("no platforms")
 	}
 	platform := platforms[0]
 
@@ -84,22 +105,19 @@ func newOpenClContext() (*cl.Context, *cl.CommandQueue) {
 		fmt.Printf("\nGetDevices returned no devices")
 	}
 	deviceIndex := -1
-	fmt.Printf("\n--- Candidates ---")
 	for i, d := range devices {
-		fmt.Printf("\nDevice %d (%s): %s", i, d.Type(), d.Name())
-		if deviceIndex < 0 && d.Type() == cl.DeviceTypeGPU {
+		if deviceIndex < 0 && d.Type() == deviceType {
 			deviceIndex = i
 		}
 	}
 	if deviceIndex < 0 {
 		deviceIndex = 0
+		return nil, nil
 	}
-	deviceIndex = 0
 	device := devices[deviceIndex]
-	fmt.Printf("\n--- Selected ---")
-	fmt.Printf("\nDevice %d (%s): %s",
+	fmt.Printf("\nDevice %d (%s): %s\n",
 		deviceIndex, device.Type(), device.Name())
-	fmt.Printf("\n--- --- ---\n")
+	fmt.Println("--------------")
 
 	context, err := cl.CreateContext([]*cl.Device{device})
 	if err != nil {
@@ -112,8 +130,18 @@ func newOpenClContext() (*cl.Context, *cl.CommandQueue) {
 	return context, queue
 }
 
-func buildOpenClProgram(context *cl.Context, source string) *cl.Program {
-	program, err := context.CreateProgramWithSource([]string{source})
+func buildOpenClKernel(
+	context *cl.Context, source string,
+	kernelName string) *cl.Kernel {
+	program := buildOpenClProgram(context, kernelSource)
+	kernel := buildKernel(program, "heatStencil")
+	return kernel
+}
+
+func buildOpenClProgram(
+	context *cl.Context, source string) *cl.Program {
+	program, err := context.CreateProgramWithSource(
+		[]string{source})
 	if err != nil {
 		fmt.Printf("\nCreateProgramWithSource failed: %+v", err)
 	}
@@ -129,6 +157,51 @@ func buildKernel(program *cl.Program, kernelName string) *cl.Kernel {
 		fmt.Printf("\nCreateKernel failed: %+v", err)
 	}
 	return kernel
+}
+
+// --- heat -------------------------------------------------
+
+func test01() float64 {
+	fmt.Println("\nNormal Version")
+	fmt.Println("--------------")
+
+	u := makeHeatTestMatrix()
+	w := makeHeatTestMatrix()
+
+	iterations := 0
+	var diff float32 = 1.0 + epsilon
+	start := time.Now()
+	for epsilon <= diff {
+		for t := 0; t < 500; t++ {
+			heatStep(w, u)
+			heatStep(u, w)
+		}
+		iterations += 1000
+		diff = w.maxDiff(u)
+		fmt.Println(
+			"iteration: ", iterations,
+			", diff: ", diff,
+			" check: ", w[10*N+10])
+	}
+	return time.Now().Sub(start).Seconds()
+}
+
+func heatStep(w matrix, u matrix) {
+	for i := 1; i < N-1; i++ {
+		for j := 1; j < N-1; j++ {
+			w[(i*N)+j] = (u[(i-1)*N+j] + u[(i+1)*N+j] +
+				u[(i*N)+j-1] + u[(i*N)+j+1]) / 4.0
+		}
+	}
+}
+
+// --- matrices ---------------------------------------------
+
+func makeHeatTestMatrix() matrix {
+	m := make(matrix, N*N)
+	m.fill(mean)
+	m.fillBorder(100.0)
+	return m
 }
 
 func (m matrix) fill(v float32) {
@@ -159,3 +232,5 @@ func (m matrix) maxDiff(m2 matrix) float32 {
 	}
 	return result
 }
+
+// ----------------------------------------------------------
