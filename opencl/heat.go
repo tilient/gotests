@@ -3,8 +3,29 @@ package main
 import (
 	"fmt"
 	"github.com/samuel/go-opencl/cl"
+	"sync"
 	"time"
 )
+
+const (
+	block   = 32
+	N       = block*64 + 2
+	mean    = 74.95107632093934
+	epsilon = 0.001
+	clGPU   = cl.DeviceTypeGPU
+	clCPU   = cl.DeviceTypeCPU
+)
+
+func main() {
+	fmt.Printf("\ntook %v seconds\n", openClTest(clGPU))
+	fmt.Printf("\ntook %v seconds\n", openClTest(clCPU))
+	fmt.Printf("\ntook %v seconds\n", test02())
+	fmt.Printf("\ntook %v seconds\n", test01())
+}
+
+// ----------------------------------------------------------
+// --- opencl test ------------------------------------------
+// ----------------------------------------------------------
 
 var kernelSource = `
 __kernel void heatStencil(
@@ -20,43 +41,23 @@ __kernel void heatStencil(
 }
 `
 
-const (
-	N       = 4*512 + 2
-	mean    = 74.95107632093934
-	epsilon = 0.001
-)
-
-type matrix []float32
-
-func main() {
-	fmt.Printf("took %v seconds\n",
-		openClTest(cl.DeviceTypeGPU))
-
-	fmt.Printf("took %v seconds\n",
-		openClTest(cl.DeviceTypeCPU))
-
-	fmt.Printf("took %v seconds\n",
-		test01())
-
-}
-
-func openClTest(deviceId cl.DeviceType) float64 {
-	mat1 := makeHeatTestMatrix()
-	mat2 := makeHeatTestMatrix()
-
-	context, queue := newOpenClContext(deviceId)
+func openClTest(deviceType cl.DeviceType) float64 {
+	context, queue := newOpenClContext(deviceType)
 	if context == nil {
-		fmt.Println("--- Device not found ---")
+		fmt.Println("--- Device not found ---", deviceType)
 		return 0.0
 	}
-	kernel := buildOpenClKernel(
-		context, kernelSource, "heatStencil")
 
+	mat1 := makeHeatTestMatrix()
 	a, _ := context.CreateEmptyBuffer(cl.MemReadWrite, 4*N*N)
 	queue.EnqueueWriteBufferFloat32(a, true, 0, mat1[:], nil)
-	b, _ := context.CreateEmptyBuffer(cl.MemReadWrite, 4*N*N)
-	queue.EnqueueWriteBufferFloat32(b, true, 0, mat1[:], nil)
 
+	mat2 := makeHeatTestMatrix()
+	b, _ := context.CreateEmptyBuffer(cl.MemReadWrite, 4*N*N)
+	queue.EnqueueWriteBufferFloat32(b, true, 0, mat2[:], nil)
+
+	kernel := buildOpenClKernel(
+		context, kernelSource, "heatStencil")
 	global := []int{N - 2, N - 2}
 	local := []int{32, 1}
 	cnt := 0
@@ -84,7 +85,9 @@ func openClTest(deviceId cl.DeviceType) float64 {
 	return time.Now().Sub(start).Seconds()
 }
 
+// ----------------------------------------------------------
 // --- opencl -----------------------------------------------
+// ----------------------------------------------------------
 
 func newOpenClContext(
 	deviceType cl.DeviceType) (*cl.Context, *cl.CommandQueue) {
@@ -186,8 +189,33 @@ func test01() float64 {
 	return time.Now().Sub(start).Seconds()
 }
 
-func heatStep(w matrix, u matrix) {
-	for i := 1; i < N-1; i++ {
+func test02() float64 {
+	fmt.Println("\nParallel Version")
+	fmt.Println("----------------")
+
+	u := makeHeatTestMatrix()
+	w := makeHeatTestMatrix()
+
+	iterations := 0
+	var diff float32 = 1.0 + epsilon
+	start := time.Now()
+	for epsilon <= diff {
+		for t := 0; t < 500; t++ {
+			pHeatStep(w, u)
+			pHeatStep(u, w)
+		}
+		iterations += 1000
+		diff = w.maxDiff(u)
+		fmt.Println(
+			"iteration: ", iterations,
+			", diff: ", diff,
+			" check: ", w[10*N+10])
+	}
+	return time.Now().Sub(start).Seconds()
+}
+
+func heatStepLines(w matrix, u matrix, ix int) {
+	for i := ix; i < ix+block; i++ {
 		for j := 1; j < N-1; j++ {
 			w[(i*N)+j] = (u[(i-1)*N+j] + u[(i+1)*N+j] +
 				u[(i*N)+j-1] + u[(i*N)+j+1]) / 4.0
@@ -195,7 +223,29 @@ func heatStep(w matrix, u matrix) {
 	}
 }
 
+func heatStep(w matrix, u matrix) {
+	for i := 1; i < N-1; i += block {
+		heatStepLines(w, u, i)
+	}
+}
+
+func pHeatStep(w matrix, u matrix) {
+	var wg sync.WaitGroup
+	wg.Add((N - 2) / block)
+	for i := 1; i < N-1; i += block {
+		go func(i int) {
+			heatStepLines(w, u, i)
+			wg.Done()
+		}(i)
+	}
+	wg.Wait()
+}
+
+//-----------------------------------------------------------
 // --- matrices ---------------------------------------------
+//-----------------------------------------------------------
+
+type matrix []float32
 
 func makeHeatTestMatrix() matrix {
 	m := make(matrix, N*N)
