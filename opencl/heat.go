@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	block   = 32
-	N       = block*64 + 2
+	block   = 16
+	N       = block*128 + 2
 	mean    = 74.95107632093934
 	epsilon = 0.001
 	clGPU   = cl.DeviceTypeGPU
@@ -17,6 +17,7 @@ const (
 )
 
 func main() {
+	fmt.Printf("\nmatrix: %v x %v\n\n", N, N)
 	fmt.Printf("\ntook %v seconds\n", openClTest(clGPU))
 	fmt.Printf("\ntook %v seconds\n", openClTest(clCPU))
 	fmt.Printf("\ntook %v seconds\n", test02())
@@ -96,7 +97,8 @@ func newOpenClContext(
 		fmt.Printf("\nFailed to get platforms: %+v", err)
 	}
 	if len(platforms) < 1 {
-		panic("no platforms")
+		fmt.Printf("\nNo OpenCL Platforms Found ")
+		return nil, nil
 	}
 	platform := platforms[0]
 
