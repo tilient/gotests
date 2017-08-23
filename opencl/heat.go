@@ -1,5 +1,20 @@
 package main
 
+// #cgo CFLAGS: -O4
+// #cgo LDFLAGS: -O4
+//
+// void cgoHeatStepRows(float *w, float *u, int M, int N,
+//                      int from, int to)
+// {
+//   for (int row = from; row < to; row++)
+//     for (int col = 1; col < N-1; col++)
+//       w[N*row+col] =
+//  		   (u[N*(row-1)+ col] + u[N*(row+1)+ col] +
+//  				u[N*row+ col-1] + u[N*row+ col+1]) / 4.0;
+// }
+//
+import "C"
+
 import (
 	"fmt"
 	"github.com/exascience/pargo/parallel"
@@ -8,13 +23,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 )
 
 func main() {
-	const N = 2048 + 2
+	const N = 1024 + 2
 	sep := strings.Repeat("=", 48)
 	fmt.Printf("%v\nmatrix: %v x %v (%v cores)\n%v\n",
 		sep, N, N, runtime.NumCPU(), sep)
+	heatTest("cgo", N, N, cgoHeatStep)
+	heatTest("pargo - cgo", N, N, pargoCgoHeatStep)
 	heatTestOpenCl(N, N, cl.DeviceTypeGPU)
 	heatTestOpenCl(N, N, cl.DeviceTypeCPU)
 	heatTest("pargo", N, N, pargoHeatStep)
@@ -91,6 +109,26 @@ func pargoHeatStep(w, u *matrix) {
 
 func pargoHeatStep2(w, u *matrix) {
 	parallel.Range(1, w.nrOfRows-1, 0, heatStepRowsOn(w, u))
+}
+
+func pargoCgoHeatStep(w, u *matrix) {
+	w_data := (*C.float)(unsafe.Pointer(&w.data[0]))
+	u_data := (*C.float)(unsafe.Pointer(&u.data[0]))
+	M := (C.int)(w.nrOfRows)
+	N := (C.int)(w.nrOfColumns)
+	parallel.Range(1, w.nrOfRows-1, 0,
+		func(low, high int) {
+			C.cgoHeatStepRows(w_data, u_data, M, N,
+				(C.int)(low), (C.int)(high))
+		})
+}
+
+func cgoHeatStep(w, u *matrix) {
+	C.cgoHeatStepRows(
+		(*C.float)(unsafe.Pointer(&w.data[0])),
+		(*C.float)(unsafe.Pointer(&u.data[0])),
+		(C.int)(w.nrOfRows), (C.int)(w.nrOfColumns),
+		(C.int)(1), (C.int)(w.nrOfRows-1))
 }
 
 // ----------------------------------------------------------
