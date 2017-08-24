@@ -7,17 +7,41 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 )
+
+/*
+// ----------------------------------------------------------
+
+#cgo CFLAGS: -O4
+
+void cgoHeatStepRows(float *w, float *u, int M, int N,
+                     int from, int to)
+{
+  for (int row = from; row < to; row++)
+    for (int col = 1; col < N-1; col++)
+      w[N*row+col] =
+ 		   (u[N*(row-1) + col] + u[N*(row+1) + col] +
+ 				u[N*row + col-1] + u[N*row + col+1]) / 4.0;
+}
+
+// ----------------------------------------------------------
+*/
+import "C"
 
 // ----------------------------------------------------------
 
+var nrOfCores int = runtime.NumCPU() / 2
+
 func main() {
 	const N = 1024 + 2
+	runtime.GOMAXPROCS(nrOfCores)
 	sep := strings.Repeat("=", 48)
 	fmt.Printf("%v\nmatrix: %v x %v (with %v cores)\n%v\n",
-		sep, N, N, runtime.NumCPU(), sep)
+		sep, N, N, nrOfCores, sep)
+	heatTest("pargo - cgo", N, N, pargoCgoHeatStep)
+	heatTest("sequential - cgo", N, N, sequentialCgoHeatStep)
 	heatTest("pargo", N, N, pargoHeatStep)
-	heatTest("pargo2", N, N, pargo2HeatStep)
 	heatTest("parallel", N, N, parallelHeatStep)
 	heatTest("sequential", N, N, sequentialHeatStep)
 	fmt.Println(sep)
@@ -63,36 +87,45 @@ func sequentialHeatStep(w, u *matrix) {
 }
 
 func pargoHeatStep(w, u *matrix) {
-	parallel.Range(1, w.nrOfRows-1, 0,
-		func(low, high int) {
-			heatStepRows(w, u, low, high)
-		})
-}
-
-func pargo2HeatStep(w, u *matrix) {
 	stepFun := func(from, to int) {
 		heatStepRows(w, u, from, to)
 	}
 	parallel.Range(1, w.nrOfRows-1, 0, stepFun)
 }
 
+func pargoCgoHeatStep(w, u *matrix) {
+	w_data := (*C.float)(unsafe.Pointer(&w.data[0]))
+	u_data := (*C.float)(unsafe.Pointer(&u.data[0]))
+	M := (C.int)(w.nrOfRows)
+	N := (C.int)(w.nrOfColumns)
+	parallel.Range(1, w.nrOfRows-1, 0,
+		func(low, high int) {
+			C.cgoHeatStepRows(w_data, u_data, M, N,
+				(C.int)(low), (C.int)(high))
+		})
+}
+
 func parallelHeatStep(w, u *matrix) {
-	cores := runtime.NumCPU()
+	blocksize := 1 + ((w.nrOfRows - 2) / nrOfCores)
 	var wg sync.WaitGroup
-	wg.Add(cores)
-	blocksize := 1 + ((w.nrOfRows - 2) / cores)
-	for c := 0; c < cores; c++ {
+	wg.Add(nrOfCores)
+	for c := 0; c < nrOfCores; c++ {
 		go func(c int) {
 			from := 1 + c*blocksize
-			to := 1 + (c+1)*blocksize
-			if to > (w.nrOfRows - 2) {
-				to = w.nrOfRows - 1
-			}
+			to := min(1+(c+1)*blocksize, w.nrOfRows-1)
 			heatStepRows(w, u, from, to)
 			wg.Done()
 		}(c)
 	}
 	wg.Wait()
+}
+
+func sequentialCgoHeatStep(w, u *matrix) {
+	C.cgoHeatStepRows(
+		(*C.float)(unsafe.Pointer(&w.data[0])),
+		(*C.float)(unsafe.Pointer(&u.data[0])),
+		(C.int)(w.nrOfRows), (C.int)(w.nrOfColumns),
+		(C.int)(1), (C.int)(w.nrOfRows-1))
 }
 
 // ----------------------------------------------------------
@@ -188,6 +221,13 @@ func max(a, b float32) float32 {
 		return b
 	}
 	return a
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // ----------------------------------------------------------
