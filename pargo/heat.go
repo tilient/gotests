@@ -40,10 +40,11 @@ func main() {
 	fmt.Printf("%v\nmatrix: %v x %v (with %v cores)\n%v\n",
 		sep, N, N, nrOfCores, sep)
 	heatTest("pargo - cgo", N, N, pargoCgoHeatStep)
-	heatTest("sequential - cgo", N, N, sequentialCgoHeatStep)
 	heatTest("pargo", N, N, pargoHeatStep)
-	heatTest("parallel", N, N, parallelHeatStep)
-	heatTest("sequential", N, N, sequentialHeatStep)
+	//heatTest("parallel", N, N, parallelHeatStep)
+	//heatTest("sequential", N, N, sequentialHeatStep)
+	//heatTest("sequential - opt", N, N, sequentialOptHeatStep)
+	//heatTest("sequential - cgo", N, N, sequentialCgoHeatStep)
 	fmt.Println(sep)
 }
 
@@ -66,12 +67,12 @@ func heatTest(title string, M, N int,
 	iterations := 0
 	start := time.Now()
 	for δ >= ε {
-		for s := 0; s < 1000; s++ {
+		for s := 0; s < 2000; s++ {
 			heatStepFun(w, u)
 			heatStepFun(u, w)
 		}
 		δ = w.maxDiff(u)
-		iterations += 2000
+		iterations += 4000
 		fmt.Printf(
 			"iters: %6d, δ: %08.6f, w[8][8]: %10.8f\n",
 			iterations, δ, w.get(8, 8))
@@ -83,7 +84,11 @@ func heatTest(title string, M, N int,
 // ----------------------------------------------------------
 
 func sequentialHeatStep(w, u *matrix) {
-	heatStepRows(w, u, 1, w.nrOfColumns-1)
+	heatStepRows(w, u, 1, w.nrOfRows-1)
+}
+
+func sequentialOptHeatStep(w, u *matrix) {
+	optHeatStepRows(w, u, 1, w.nrOfRows-1)
 }
 
 func pargoHeatStep(w, u *matrix) {
@@ -141,6 +146,36 @@ func heatStepRow(w, u *matrix, row int) {
 		w.set(row, col,
 			(u.get(row-1, col)+u.get(row+1, col)+
 				u.get(row, col-1)+u.get(row, col+1))/4.0)
+	}
+}
+
+// ----------------------------------------------------------
+
+func optHeatStepRows(w, u *matrix, from, to int) {
+	N := w.nrOfColumns
+	wPtr := uintptr(unsafe.Pointer(&w.data[from*N+1]))
+	u1Ptr := uintptr(unsafe.Pointer(&u.data[from*N-N+1]))
+	u2Ptr := uintptr(unsafe.Pointer(&u.data[from*N+N+1]))
+	u3Ptr := uintptr(unsafe.Pointer(&u.data[from*N]))
+	u4Ptr := uintptr(unsafe.Pointer(&u.data[from*N+2]))
+	for row := from; row < to; row++ {
+		for col := 1; col < N-1; col++ {
+			*((*float32)(unsafe.Pointer(wPtr))) =
+				((*(*float32)(unsafe.Pointer(u1Ptr))) +
+					(*(*float32)(unsafe.Pointer(u2Ptr))) +
+					(*(*float32)(unsafe.Pointer(u3Ptr))) +
+					(*(*float32)(unsafe.Pointer(u4Ptr)))) / 4.0
+			wPtr += 4
+			u1Ptr += 4
+			u2Ptr += 4
+			u3Ptr += 4
+			u4Ptr += 4
+		}
+		wPtr += 8
+		u1Ptr += 8
+		u2Ptr += 8
+		u3Ptr += 8
+		u4Ptr += 8
 	}
 }
 
