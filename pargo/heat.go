@@ -31,7 +31,7 @@ import "C"
 
 // ----------------------------------------------------------
 
-var nrOfCores int = runtime.NumCPU() / 2
+var nrOfCores int = runtime.NumCPU() // 2
 
 func main() {
 	const N = 1024 + 2
