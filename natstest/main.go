@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	servers := []string{"tilient.org", "dev.tilient.org"}
+	servers := []string{"tilient.org", "wiffel.space"}
 	target := "~/kashbah/test"
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
