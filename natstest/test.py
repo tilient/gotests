@@ -8,7 +8,7 @@ def run(loop):
   options = {
     "servers": [
       "nats://tilient.org:44222",
-      "nats://dev.tilient.org:44222",
+      "nats://wiffel.space:44222",
     ],
     "io_loop": loop,
   }
