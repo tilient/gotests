@@ -227,11 +227,11 @@ func (m *matrix) fill(v float32) {
 func (m *matrix) fillBorders(t, r, b, l float32) {
 	for i := 0; i < m.nrOfColumns; i++ {
 		m.set(0, i, t)
-		m.set(0, m.nrOfRows-1, t)
+		m.set(0, m.nrOfRows-1, b)
 	}
 	for i := 0; i < m.nrOfRows; i++ {
 		m.set(i, 0, l)
-		m.set(i, m.nrOfColumns-1, l)
+		m.set(i, m.nrOfColumns-1, r)
 	}
 }
 
