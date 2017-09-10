@@ -34,17 +34,17 @@ import "C"
 var nrOfCores int = runtime.NumCPU() // 2
 
 func main() {
-	const N = 1024 + 2
+	const N = 2048 + 2
 	runtime.GOMAXPROCS(nrOfCores)
 	sep := strings.Repeat("=", 48)
 	fmt.Printf("%v\nmatrix: %v x %v (with %v cores)\n%v\n",
 		sep, N, N, nrOfCores, sep)
-	heatTest("pargo - cgo", N, N, pargoCgoHeatStep)
-	heatTest("pargo", N, N, pargoHeatStep)
+	//heatTest("pargo - cgo", N, N, pargoCgoHeatStep)
+	//heatTest("pargo", N, N, pargoHeatStep)
 	//heatTest("parallel", N, N, parallelHeatStep)
-	//heatTest("sequential", N, N, sequentialHeatStep)
-	//heatTest("sequential - opt", N, N, sequentialOptHeatStep)
-	//heatTest("sequential - cgo", N, N, sequentialCgoHeatStep)
+	heatTest("sequential", N, N, sequentialHeatStep)
+	heatTest("sequential - opt", N, N, sequentialOptHeatStep)
+	heatTest("sequential - cgo", N, N, sequentialCgoHeatStep)
 	fmt.Println(sep)
 }
 
@@ -67,12 +67,12 @@ func heatTest(title string, M, N int,
 	iterations := 0
 	start := time.Now()
 	for δ >= ε {
-		for s := 0; s < 2000; s++ {
+		for s := 0; s < 1000; s++ {
 			heatStepFun(w, u)
 			heatStepFun(u, w)
 		}
 		δ = w.maxDiff(u)
-		iterations += 4000
+		iterations += 2000
 		fmt.Printf(
 			"iters: %6d, δ: %08.6f, w[8][8]: %10.8f\n",
 			iterations, δ, w.get(8, 8))
