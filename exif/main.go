@@ -3,20 +3,41 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
+	//"log"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/rwcarlsen/goexif/exif"
+	//"github.com/rwcarlsen/goexif/exif"
 )
 
 func main() {
+	removeCR2withDNGsInOriginals()
 	//removeDNGsWithJPGsInPhotoKashbah()
 	//removeJPGsWithDNGsInOriginals()
 	//removeJPGsWithRawInOriginals()
 	//findPictureFilesWithoutExifDate()
-	findCandidateDirectoriesToConvert()
+	//findCandidateDirectoriesToConvert()
+}
+
+func removeCR2withDNGsInOriginals() {
+	dirName := "/mnt/c/wiffel/pictures/originals"
+	filepath.Walk(dirName,
+		func(path string, f os.FileInfo, err error) error {
+			if isCr2Picture(path) {
+				hasCompanionDng, dngPath := companionDng(path)
+				if hasCompanionDng {
+					fmt.Println(dngPath)
+					fmt.Println(" -", path)
+					os.Remove(path)
+					hasCompanionXmp, xmpPath := companionXmp(path)
+					if hasCompanionXmp {
+						fmt.Println(" .", xmpPath)
+						os.Remove(xmpPath)
+					}
+				}
+			}
+			return nil
+		})
 }
 
 func findCandidateDirectoriesToConvert() {
@@ -61,18 +82,18 @@ func dirContainsXmp(dirName string) bool {
 	return result
 }
 
-func findPictureFilesWithoutExifDate() {
-	dirName := "/mnt/c/wiffel/public/photoKashbah"
-	filepath.Walk(dirName,
-		func(path string, f os.FileInfo, err error) error {
-			if isPicture(path) {
-				if !hasExifDate(path) {
-					fmt.Println(path)
-				}
-			}
-			return nil
-		})
-}
+//func findPictureFilesWithoutExifDate() {
+//	dirName := "/mnt/c/wiffel/public/photoKashbah"
+//	filepath.Walk(dirName,
+//		func(path string, f os.FileInfo, err error) error {
+//			if isPicture(path) {
+//				if !hasExifDate(path) {
+//					fmt.Println(path)
+//				}
+//			}
+//			return nil
+//		})
+//}
 
 func removeJPGsWithRawInOriginals() {
 	dirName := "/mnt/c/wiffel/pictures/originals"
@@ -134,6 +155,15 @@ func isDngPicture(path string) bool {
 	return ((ext == ".dng") || (ext == ".DNG"))
 }
 
+func isCr2Picture(path string) bool {
+	rawExtensions := map[string]bool{
+		".cr2": true,
+		".CR2": true,
+	}
+	ext := filepath.Ext(path)
+	return rawExtensions[ext]
+}
+
 func isRawPicture(path string) bool {
 	rawExtensions := map[string]bool{
 		".dng": true,
@@ -162,6 +192,33 @@ func isPicture(path string) bool {
 	return rawExtensions[ext]
 }
 
+func companionXmp(path string) (bool, string) {
+	xmpExtensions := []string{
+		".xmp", ".XMP",
+		".CR2.xmp", ".CR2.XMP",
+		".cr2.xmp", ".cr2.XMP"}
+	basename := fileBasename(path)
+	for _, ext := range xmpExtensions {
+		companionFilename := basename + ext
+		if fileExists(companionFilename) {
+			return true, companionFilename
+		}
+	}
+	return false, ""
+}
+
+func companionDng(path string) (bool, string) {
+	dngExtensions := []string{".dng", ".DNG"}
+	basename := fileBasename(path)
+	for _, ext := range dngExtensions {
+		companionFilename := basename + ext
+		if fileExists(companionFilename) {
+			return true, companionFilename
+		}
+	}
+	return false, ""
+}
+
 func companionJpeg(path string) (bool, string) {
 	jpgExtensions := []string{
 		".jpg", ".JPG", ".jpeg", ".JPEG",
@@ -187,33 +244,33 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-func hasExifDate(path string) bool {
-	f, err := os.Open(path)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-	d, err := exif.Decode(f)
-	if err != nil {
-		return false
-	}
-	_, err = d.DateTime()
-	if err != nil {
-		return false
-	}
-	return true
-}
-
-func exifStuff() {
-	fname := "xxx"
-	f, err := os.Open(fname)
-	if err != nil {
-		log.Fatal(err)
-	}
-	x, err := exif.Decode(f)
-	if err != nil {
-		log.Fatal(err)
-	}
-	tm, _ := x.DateTime()
-	fmt.Println(fname, "@", tm)
-}
+//func hasExifDate(path string) bool {
+//	f, err := os.Open(path)
+//	if err != nil {
+//		return false
+//	}
+//	defer f.Close()
+//	d, err := exif.Decode(f)
+//	if err != nil {
+//		return false
+//	}
+//	_, err = d.DateTime()
+//	if err != nil {
+//		return false
+//	}
+//	return true
+//}
+//
+//func exifStuff() {
+//	fname := "xxx"
+//	f, err := os.Open(fname)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	x, err := exif.Decode(f)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	tm, _ := x.DateTime()
+//	fmt.Println(fname, "@", tm)
+//}
